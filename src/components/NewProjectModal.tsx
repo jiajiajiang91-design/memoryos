@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { X, FolderPlus } from "lucide-react";
+import { useT } from "../lib/i18n";
 
 type Props = {
   onClose: () => void;
@@ -7,6 +8,7 @@ type Props = {
 };
 
 export default function NewProjectModal({ onClose, onCreate }: Props) {
+  const t = useT();
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [currentGoal, setCurrentGoal] = useState("");
@@ -37,7 +39,7 @@ export default function NewProjectModal({ onClose, onCreate }: Props) {
         <div className="h-14 px-6 border-b border-hairline flex items-center justify-between shrink-0">
           <div className="flex items-center gap-2.5">
             <FolderPlus size={18} strokeWidth={1.5} className="text-slate" />
-            <span className="text-base font-semibold">新建项目</span>
+            <span className="text-base font-semibold">{t("newProject.title")}</span>
           </div>
           <button
             onClick={onClose}
@@ -49,32 +51,32 @@ export default function NewProjectModal({ onClose, onCreate }: Props) {
 
         {/* Body */}
         <div className="px-7 py-6 space-y-5">
-          <Field label="项目名" required>
+          <Field label={t("newProject.nameLabel")} required>
             <input
               ref={inputRef}
               value={name}
               onChange={(e) => setName(e.target.value)}
               onKeyDown={(e) => { if (e.key === "Enter") submit(); }}
-              placeholder="例如:转行作品集"
+              placeholder={t("newProject.namePlaceholder")}
               className="w-full h-10 px-3 border border-hairline rounded-md text-[14px] focus:outline-none focus:border-slate"
             />
           </Field>
 
-          <Field label="一句话简介" optional>
+          <Field label={t("newProject.descLabel")} optional optionalLabel={t("common.optional")}>
             <input
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               onKeyDown={(e) => { if (e.key === "Enter") submit(); }}
-              placeholder="可以稍后再填"
+              placeholder={t("newProject.descPlaceholder")}
               className="w-full h-10 px-3 border border-hairline rounded-md text-[14px] focus:outline-none focus:border-slate"
             />
           </Field>
 
-          <Field label="当前目标" optional>
+          <Field label={t("newProject.goalLabel")} optional optionalLabel={t("common.optional")}>
             <textarea
               value={currentGoal}
               onChange={(e) => setCurrentGoal(e.target.value)}
-              placeholder="可以稍后再填"
+              placeholder={t("newProject.goalPlaceholder")}
               rows={3}
               className="w-full px-3 py-2 border border-hairline rounded-md text-[14px] leading-relaxed resize-y focus:outline-none focus:border-slate"
             />
@@ -87,14 +89,14 @@ export default function NewProjectModal({ onClose, onCreate }: Props) {
             onClick={onClose}
             className="h-9 px-4 rounded-md text-[13px] font-medium text-ink-soft hover:bg-surface-soft transition-colors"
           >
-            取消
+            {t("common.cancel")}
           </button>
           <button
             onClick={submit}
             disabled={!name.trim()}
             className="h-9 px-4 rounded-md bg-slate text-white text-[13px] font-medium hover:opacity-90 transition-opacity disabled:opacity-30 disabled:cursor-not-allowed"
           >
-            创建
+            {t("newProject.createBtn")}
           </button>
         </div>
       </div>
@@ -103,10 +105,11 @@ export default function NewProjectModal({ onClose, onCreate }: Props) {
 }
 
 function Field({
-  label, optional, required, children,
+  label, optional, optionalLabel, required, children,
 }: {
   label: string;
   optional?: boolean;
+  optionalLabel?: string;
   required?: boolean;
   children: React.ReactNode;
 }) {
@@ -115,7 +118,7 @@ function Field({
       <label className="text-[12px] text-ink-soft font-medium block mb-1.5">
         {label}
         {required && <span className="text-warn ml-1">*</span>}
-        {optional && <span className="text-ink-faint ml-1">(可选)</span>}
+        {optional && optionalLabel && <span className="text-ink-faint ml-1">{optionalLabel}</span>}
       </label>
       {children}
     </div>

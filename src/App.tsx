@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react";
-import { Zap, FolderOpen, ChevronRight, X } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Zap, FolderOpen, ChevronRight, X, Undo2 } from "lucide-react";
 import {
   loadWorkspace,
   selectWorkspace,
@@ -16,6 +16,7 @@ import {
   createProject,
   renameProject,
   deleteProject,
+  restoreProject,
 } from "./lib/fs";
 import { ask } from "@tauri-apps/api/dialog";
 import { buildStartSessionPrompt } from "./lib/parser";
@@ -30,10 +31,21 @@ import FileViewerModal from "./components/FileViewerModal";
 import BootstrapModal from "./components/BootstrapModal";
 import NewProjectModal from "./components/NewProjectModal";
 import RenameProjectModal from "./components/RenameProjectModal";
+import LanguageToggle from "./components/LanguageToggle";
+import { useT, useLang } from "./lib/i18n";
 
 type ReviewState = { raw: string; parsed: ParsedHandoff } | null;
 
+// 把路径 "C:\Users\xxx\Documents\MemoryOS" 转成 "Documents / MemoryOS"
+function friendlyLocation(path: string): string {
+  if (!path) return "...";
+  const segs = path.split(/[\\/]/).filter(Boolean);
+  return segs.slice(-2).join(" / ");
+}
+
 export default function App() {
+  const t = useT();
+  const [lang] = useLang();
   const [workspace, setWorkspace] = useState<string | null>(null);
   const [projects, setProjects] = useState<ProjectMeta[]>([]);
   const [currentSlug, setCurrentSlug] = useState<string | null>(null);
@@ -44,6 +56,11 @@ export default function App() {
     () => localStorage.getItem("memoryos.bannerDismissed") === "1"
   );
   const [toast, setToast] = useState<string | null>(null);
+
+  const dismissBanner = () => {
+    setBannerDismissed(true);
+    localStorage.setItem("memoryos.bannerDismissed", "1");
+  };
   const [review, setReview] = useState<ReviewState>(null);
   const [refreshKey, setRefreshKey] = useState(0);
 
@@ -67,6 +84,89 @@ export default function App() {
   const [newProjectOpen, setNewProjectOpen] = useState(false);
   const [renamingSlug, setRenamingSlug] = useState<string | null>(null);
 
+  // 核心资料友好名 — 根据当前语言动态映射
+  const coreFileLabel = (file: string) =>
+    file === "about_me.md"
+      ? t("sidebar.aboutMe")
+      : file === "00_context.md"
+      ? t("sidebar.context")
+      : file === "decisions.md"
+      ? t("sidebar.decisions")
+      : file;
+
+  // 删除项目后的 5 秒撤销窗口
+  const [undoableDelete, setUndoableDelete] = useState<
+    | { name: string; slug: string; originalPath: string; deadline: number }
+    | null
+  >(null);
+  const [undoCountdown, setUndoCountdown] = useState(5);
+  const undoTimerRef = useRef<number | null>(null);
+
+  // 倒计时显示
+  useEffect(() => {
+    if (!undoableDelete) return;
+    const tick = () => {
+      const remain = Math.max(0, Math.ceil((undoableDelete.deadline - Date.now()) / 1000));
+      setUndoCountdown(remain);
+      if (remain <= 0) {
+        setUndoableDelete(null);
+        if (undoTimerRef.current) {
+          window.clearInterval(undoTimerRef.current);
+          undoTimerRef.current = null;
+        }
+      }
+    };
+    tick();
+    undoTimerRef.current = window.setInterval(tick, 250);
+    return () => {
+      if (undoTimerRef.current) {
+        window.clearInterval(undoTimerRef.current);
+        undoTimerRef.current = null;
+      }
+    };
+  }, [undoableDelete]);
+
+  const handleUndoDelete = async () => {
+    if (!undoableDelete) return;
+    const target = undoableDelete;
+    setUndoableDelete(null);
+    try {
+      await restoreProject(target.originalPath);
+      setRefreshKey((k) => k + 1);
+      setCurrentSlug(target.slug);
+      showToast(t("toast.restored", { name: target.name }));
+    } catch (e: any) {
+      showToast(t("toast.restoreFailed", { err: e?.message ?? e }));
+    }
+  };
+
+  // 两种视图共用的 toast/undo 浮层 — 放在 App 顶层 fixed,无论显示哪个视图都不会被裁掉
+  const toastBlock = useMemo(
+    () => (
+      <>
+        {undoableDelete && (
+          <div className="fixed bottom-6 right-6 bg-ink text-paper text-[13px] pl-4 pr-1.5 py-1.5 rounded-lg inline-flex items-center gap-3 z-[100] shadow-[0_8px_28px_rgba(0,0,0,0.22)] animate-rise">
+            <span>{t("undo.toastPrefix", { name: undoableDelete.name })}</span>
+            <button
+              onClick={handleUndoDelete}
+              className="h-8 px-3 rounded-md bg-white text-ink font-semibold inline-flex items-center gap-1.5 tabular-nums hover:bg-paper transition-colors"
+            >
+              <Undo2 size={14} strokeWidth={2} />
+              {t("undo.button")} · {undoCountdown}s
+            </button>
+          </div>
+        )}
+        {toast && !undoableDelete && (
+          <div className="fixed bottom-6 right-6 bg-ink text-paper text-[13px] font-medium px-4 py-3 rounded-md inline-flex items-center gap-2 z-[100] shadow-[0_8px_24px_rgba(0,0,0,0.16)] animate-rise">
+            <span className="text-ok">✓</span>
+            {toast}
+          </div>
+        )}
+      </>
+    ),
+    [toast, undoableDelete, undoCountdown, t]
+  );
+
   useEffect(() => {
     if (!workspace) return;
     (async () => {
@@ -85,7 +185,7 @@ export default function App() {
     }
   }, [setupOpen, setupPath]);
 
-  // Load project list when workspace changes
+  // Load project list when workspace 或语言切换
   useEffect(() => {
     if (!workspace) return;
     (async () => {
@@ -98,25 +198,20 @@ export default function App() {
       }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [workspace, refreshKey]);
+  }, [workspace, refreshKey, lang]);
 
-  // Load full project when slug changes
+  // Load full project when slug 或语言切换
   useEffect(() => {
     if (!workspace || !currentSlug) { setProject(null); return; }
     (async () => {
       try { setProject(await readProject(workspace, currentSlug)); }
       catch (e) { console.error(e); setProject(null); }
     })();
-  }, [workspace, currentSlug, refreshKey]);
+  }, [workspace, currentSlug, refreshKey, lang]);
 
   const showToast = (m: string) => {
     setToast(m);
     setTimeout(() => setToast(null), 3000);
-  };
-
-  const dismissBanner = () => {
-    setBannerDismissed(true);
-    localStorage.setItem("memoryos.bannerDismissed", "1");
   };
 
   const onParsed = (raw: string, parsed: ParsedHandoff) => {
@@ -138,48 +233,66 @@ export default function App() {
     }
     setReview(null);
     setRefreshKey((k) => k + 1);
-    showToast(`Session saved. ${saved} file${saved === 1 ? "" : "s"} updated.`);
+    showToast(t("toast.sessionSaved", { n: saved }));
   };
 
-  // ── Welcome / setup screen ─────────────────────────
-  if (!workspace) {
+  // ── Welcome / 空工作区 ─────────────────────────────
+  if (!workspace || !projects.length) {
+    const hasWorkspace = !!workspace;
+    const primary = hasWorkspace
+      ? { label: t("welcome.newFirstProject"), hint: t("welcome.newFirstProjectHint"), onClick: () => setNewProjectOpen(true) }
+      : { label: t("welcome.quickStart"), hint: t("welcome.quickStartHint"), onClick: () => setSetupOpen(true) };
+    const secondaryLabel = hasWorkspace ? t("welcome.switchWorkspace") : t("welcome.useExisting");
+
     return (
-      <div className="min-h-screen flex items-center justify-center bg-paper px-12">
+      <div className="min-h-screen flex items-center justify-center bg-paper px-12 relative">
+        {/* 右上角语言切换 */}
+        <div className="absolute top-5 right-6">
+          <LanguageToggle />
+        </div>
+
         <div className="w-[420px] text-center">
           <div className="text-[40px] leading-none font-semibold mb-4 tracking-[-0.02em]">
             <span className="text-slate font-normal mr-3">◇</span>MemoryOS
           </div>
           <p className="text-[15px] text-ink-soft leading-relaxed mb-2">
-            跨 AI 的工作记忆。
+            {t("welcome.tagline")}
           </p>
           <p className="text-[13px] text-ink-faint leading-relaxed mb-10">
-            不需要登录，不上传任何东西，数据在你自己的电脑里。
+            {t("welcome.subtagline")}
           </p>
 
           <button
-            onClick={() => setSetupOpen(true)}
+            onClick={primary.onClick}
             className="w-full h-14 px-5 bg-slate text-white rounded-lg flex items-center justify-center gap-2.5 text-[15px] font-medium hover:opacity-90 transition-opacity shadow-[0_1px_2px_rgba(0,0,0,0.04)]"
           >
             <Zap size={18} strokeWidth={1.5} />
-            一键开始
+            {primary.label}
           </button>
-          <p className="text-[12px] text-ink-faint mt-2">
-            会先让你确认保存位置
-          </p>
+          <p className="text-[12px] text-ink-faint mt-2">{primary.hint}</p>
 
           <div className="mt-8 text-[13px]">
             <button
-              onClick={async () => { const w = await selectWorkspace(); if (w) setWorkspace(w); }}
+              onClick={async () => {
+                if (hasWorkspace) {
+                  localStorage.removeItem("memoryos.workspace");
+                  setWorkspace(null);
+                  setProjects([]);
+                  setCurrentSlug(null);
+                  setProject(null);
+                }
+                const w = await selectWorkspace(t("picker.selectWorkspace"));
+                if (w) setWorkspace(w);
+              }}
               className="text-ink-soft hover:text-slate transition-colors inline-flex items-center gap-1.5"
             >
               <FolderOpen size={14} strokeWidth={1.5} />
-              使用我已有的文件夹
+              {secondaryLabel}
             </button>
           </div>
 
-          <p className="text-[11px] text-ink-faint mt-12 leading-relaxed">
-            所有内容是普通 Markdown 文件，<br />
-            可以用任何编辑器打开、备份、迁移。
+          <p className="text-[11px] text-ink-faint mt-12 leading-relaxed whitespace-pre-line">
+            {t("welcome.markdownNote")}
           </p>
         </div>
 
@@ -190,7 +303,7 @@ export default function App() {
               onClick={(e) => e.stopPropagation()}
             >
               <div className="flex items-center justify-between mb-6">
-                <h2 className="text-lg font-semibold">保存到哪里?</h2>
+                <h2 className="text-lg font-semibold">{t("setup.title")}</h2>
                 <button
                   onClick={() => setSetupOpen(false)}
                   className="w-7 h-7 rounded-md text-ink-faint hover:bg-surface-soft hover:text-ink transition-colors inline-flex items-center justify-center"
@@ -199,23 +312,24 @@ export default function App() {
                 </button>
               </div>
 
-              <div className="bg-surface-soft rounded-lg px-4 py-3 mb-3 text-[13px] font-mono break-all text-ink">
-                {setupPath || "..."}
+              <div className="bg-surface-soft rounded-lg px-4 py-3 mb-3 text-[13px] text-ink">
+                <div className="text-[12px] text-ink-soft mb-1">{t("setup.defaultLocation")}</div>
+                <div className="font-medium">{friendlyLocation(setupPath)}</div>
               </div>
 
               <button
                 onClick={async () => {
-                  const picked = await pickCustomWorkspaceLocation();
+                  const picked = await pickCustomWorkspaceLocation(t("picker.pickLocation"));
                   if (picked) setSetupPath(picked);
                 }}
                 className="text-[13px] text-ink-soft hover:text-slate transition-colors inline-flex items-center gap-1.5 mb-6"
               >
                 <FolderOpen size={14} strokeWidth={1.5} />
-                换个位置
+                {t("setup.changeLocation")}
               </button>
 
               <p className="text-[12px] text-ink-faint mb-6 leading-relaxed">
-                我会在这个位置下建一个 MemoryOS 文件夹,放进 about_me.md、projects/ 和一个示例项目。如果这个文件夹已经存在,不会覆盖你已有的内容。
+                {t("setup.description")}
               </p>
 
               <div className="flex gap-3 justify-end">
@@ -223,7 +337,7 @@ export default function App() {
                   onClick={() => setSetupOpen(false)}
                   className="h-10 px-4 rounded-md text-[14px] font-medium text-ink-soft hover:bg-surface-soft transition-colors"
                 >
-                  取消
+                  {t("common.cancel")}
                 </button>
                 <button
                   onClick={async () => {
@@ -233,36 +347,33 @@ export default function App() {
                   }}
                   className="h-10 px-5 rounded-md bg-slate text-white text-[14px] font-medium hover:opacity-90 transition-opacity inline-flex items-center gap-1.5"
                 >
-                  就用这里
+                  {t("setup.useHere")}
                   <ChevronRight size={16} strokeWidth={1.5} />
                 </button>
               </div>
             </div>
           </div>
         )}
-      </div>
-    );
-  }
 
-  // ── Empty workspace ────────────────────────────────
-  if (!projects.length) {
-    return (
-      <div className="min-h-screen flex flex-col items-center justify-center bg-paper px-12">
-        <div className="max-w-md text-center">
-          <h1 className="text-[32px] font-semibold tracking-[-0.02em] mb-3">Workspace 是空的</h1>
-          <p className="text-ink-soft mb-6 leading-relaxed">
-            在 <code className="font-mono text-ink">{workspace}/projects/</code> 下新建一个文件夹（例如{" "}
-            <code className="font-mono text-ink">my-project</code>），里面放一个{" "}
-            <code className="font-mono text-ink">project.json</code> 即可被识别。
-          </p>
-          <button
-            onClick={() => setRefreshKey((k) => k + 1)}
-            className="h-10 px-4 rounded-md bg-slate text-white font-medium text-sm hover:opacity-90 transition-opacity"
-          >
-            刷新
-          </button>
-          <p className="text-xs text-ink-faint mt-6">README 里有 project.json 的字段说明。</p>
-        </div>
+        {/* 空工作区也允许直接新建项目 */}
+        {newProjectOpen && workspace && (
+          <NewProjectModal
+            onClose={() => setNewProjectOpen(false)}
+            onCreate={async (opts) => {
+              try {
+                const slug = await createProject(workspace, opts);
+                setNewProjectOpen(false);
+                setRefreshKey((k) => k + 1);
+                setCurrentSlug(slug);
+                showToast(t("toast.created", { name: opts.name }));
+              } catch (e: any) {
+                showToast(t("toast.createFailed", { err: e?.message ?? e }));
+              }
+            }}
+          />
+        )}
+
+        {toastBlock}
       </div>
     );
   }
@@ -276,28 +387,33 @@ export default function App() {
         sessionsCount={project?.sessions.length ?? 0}
         onSelectProject={(slug) => { setCurrentSlug(slug); setReview(null); }}
         onNewProject={() => setNewProjectOpen(true)}
+        onRefreshProjects={() => {
+          setRefreshKey((k) => k + 1);
+          showToast(t("sidebar.refreshed"));
+        }}
         onRenameProject={(slug) => setRenamingSlug(slug)}
         onDeleteProject={async (slug) => {
           const target = projects.find((p) => p.slug === slug);
+          const name = target?.name ?? slug;
           const confirmed = await ask(
-            `确定要删除项目「${target?.name ?? slug}」吗?\n\n` +
-              `这会永久删除整个项目文件夹,包括所有 session 历史。无法撤销。`,
-            { title: "删除项目", type: "warning", okLabel: "删除", cancelLabel: "取消" }
+            t("confirm.deleteMsg", { name }),
+            { title: t("confirm.deleteTitle"), type: "warning", okLabel: t("confirm.deleteOk"), cancelLabel: t("common.cancel") }
           );
           if (!confirmed || !workspace) return;
           try {
-            await deleteProject(workspace, slug);
+            const originalPath = await deleteProject(workspace, slug);
             if (currentSlug === slug) {
               setCurrentSlug(null);
               setProject(null);
             }
             setRefreshKey((k) => k + 1);
-            showToast(`已删除「${target?.name ?? slug}」`);
+            if (originalPath) {
+              setUndoableDelete({ name, slug, originalPath, deadline: Date.now() + 5000 });
+            }
           } catch (e: any) {
-            showToast(`删除失败: ${e?.message ?? e}`);
+            showToast(t("toast.trashFailed", { err: e?.message ?? e }));
           }
         }}
-        helpBannerDismissed={bannerDismissed}
         onOpenHelp={() => setDrawerOpen(true)}
         onToast={showToast}
         onSwitchWorkspace={() => {
@@ -316,7 +432,7 @@ export default function App() {
               ? await join(workspace, "about_me.md")
               : await join(workspace, "projects", currentSlug ?? "", file);
           const content = (await exists(fullPath)) ? await readTextFile(fullPath) : "";
-          setViewingCoreFile({ filename: file, fullPath, content });
+          setViewingCoreFile({ filename: coreFileLabel(file), fullPath, content });
         }}
       />
 
@@ -331,7 +447,7 @@ export default function App() {
       ) : project ? (
         <Dashboard
           project={project}
-          helpBannerDismissed={bannerDismissed}
+          bannerDismissed={bannerDismissed}
           onDismissBanner={dismissBanner}
           onOpenHelp={() => setDrawerOpen(true)}
           onCopyStartPrompt={async () => {
@@ -340,9 +456,10 @@ export default function App() {
             const prompt = buildStartSessionPrompt({
               projectName: project.name,
               ...ctx,
+              lang,
             });
             await copyToClipboard(prompt);
-            showToast("Start Session 指令已复制。粘贴到 AI 让它读取你的上下文。");
+            showToast(t("toast.startPromptCopied"));
           }}
           onCopyPrompt={() => setModal("copy")}
           onImport={() => setModal("import")}
@@ -356,7 +473,7 @@ export default function App() {
             const { open: shellOpen } = await import("@tauri-apps/api/shell");
             const p = await join(workspace, "projects", project.slug, "sessions");
             if (!(await exists(p))) await createDir(p, { recursive: true });
-            try { await shellOpen(p); } catch (e: any) { showToast(`打不开: ${e?.message ?? e}`); }
+            try { await shellOpen(p); } catch (e: any) { showToast(t("toast.openFailed", { err: e?.message ?? e })); }
           }}
         />
       ) : (
@@ -370,7 +487,7 @@ export default function App() {
           onClose={() => setModal(null)}
           onCopied={() => {
             setModal(null);
-            showToast("End Session Prompt copied. Paste it into your AI tool.");
+            showToast(t("toast.endPromptCopied"));
           }}
         />
       )}
@@ -410,9 +527,9 @@ export default function App() {
               setNewProjectOpen(false);
               setRefreshKey((k) => k + 1);
               setCurrentSlug(slug);
-              showToast(`已创建「${opts.name}」`);
+              showToast(t("toast.created", { name: opts.name }));
             } catch (e: any) {
-              showToast(`创建失败: ${e?.message ?? e}`);
+              showToast(t("toast.createFailed", { err: e?.message ?? e }));
             }
           }}
         />
@@ -430,9 +547,9 @@ export default function App() {
                 await renameProject(workspace, renamingSlug, newName);
                 setRenamingSlug(null);
                 setRefreshKey((k) => k + 1);
-                showToast(`已重命名为「${newName}」`);
+                showToast(t("toast.renamed", { name: newName }));
               } catch (e: any) {
-                showToast(`重命名失败: ${e?.message ?? e}`);
+                showToast(t("toast.renameFailed", { err: e?.message ?? e }));
               }
             }}
           />
@@ -443,7 +560,7 @@ export default function App() {
         <BootstrapModal
           workspace={workspace}
           projectSlug={currentSlug}
-          projectName={project?.name ?? currentSlug ?? "当前项目"}
+          projectName={project?.name ?? currentSlug ?? "—"}
           needs={[
             ...(bootstrapNeeds.needsAboutMe ? (["about_me"] as const) : []),
             ...(bootstrapNeeds.needsContext ? (["context"] as const) : []),
@@ -463,32 +580,7 @@ export default function App() {
         }}
       />
 
-      {toast && (
-        <div className="fixed bottom-6 right-6 bg-ink text-paper text-[13px] font-medium px-4 py-3 rounded-md inline-flex items-center gap-2 z-[60] shadow-[0_8px_24px_rgba(0,0,0,0.16)] animate-rise">
-          <span className="text-ok">✓</span>
-          {toast}
-        </div>
-      )}
+      {toastBlock}
     </div>
-  );
-}
-
-function SetupBtn({
-  icon: Icon,
-  label,
-  onClick,
-}: {
-  icon: React.ComponentType<any>;
-  label: string;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      onClick={onClick}
-      className="group h-[52px] px-5 bg-white border border-hairline rounded-lg flex items-center gap-3 text-left hover:border-slate transition-colors"
-    >
-      <Icon size={20} strokeWidth={1.5} className="text-ink-soft group-hover:text-slate transition-colors" />
-      <span className="text-sm font-medium">{label}</span>
-    </button>
   );
 }

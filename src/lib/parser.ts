@@ -1,7 +1,9 @@
-// MemoryOS handoff Markdown parser.
+// MemoryOS handoff Markdown parser + prompt builders.
 // Splits the standard 9-section handoff into structured fields.
+// Prompt builders accept lang for zh/en switching.
 
 import type { ParsedHandoff } from "../types";
+import type { Lang } from "./i18n";
 
 function extract(text: string, heading: string): string {
   const escaped = heading.replace(/[.*+?^${}()|[\\]\\\\]/g, "\\$&");
@@ -36,7 +38,41 @@ export function parseHandoff(raw: string): ParsedHandoff {
   };
 }
 
-export function aboutMeBootstrapPrompt(): string {
+export function aboutMeBootstrapPrompt(lang: Lang = "zh"): string {
+  if (lang === "en") {
+    return `I'm using MemoryOS (a local-first cross-AI working memory tool). Please help me draft an \`about_me.md\` that captures my long-term identity preferences.
+
+Ask me a few quick questions to learn:
+
+1. Basics (name/nickname, location, current role — student / professional / other)
+2. What I'm working on (field, long-term goal, recent focus)
+3. Work and communication preferences (concise vs. detailed, preferred languages, what kind of feedback is most useful)
+4. AI collaboration preferences (want direct answers vs. clarifying questions, what mistakes I'm sensitive to, what I dislike)
+5. Anything you want all future AI conversations to remember
+
+After the Q&A, output the full \`about_me.md\` in the Markdown format below. I'll copy it back to MemoryOS.
+
+\`\`\`markdown
+# About Me
+
+## Basics
+- ...
+
+## What I'm working on
+- ...
+
+## Work / communication preferences
+- ...
+
+## AI collaboration preferences
+- ...
+
+## Don't do
+- ...
+\`\`\`
+
+Output only the Markdown — no extra explanation.`;
+  }
   return `我想用 MemoryOS（一个跨 AI 的本地工作记忆工具），需要你帮我整理一份长期身份偏好文件 about_me.md。
 
 请通过对话问我几个问题来了解我：
@@ -71,7 +107,46 @@ export function aboutMeBootstrapPrompt(): string {
 输出时请只给我 Markdown 内容，不要解释。`;
 }
 
-export function contextBootstrapPrompt(projectName: string): string {
+export function contextBootstrapPrompt(projectName: string, lang: Lang = "zh"): string {
+  if (lang === "en") {
+    return `I just created a project "${projectName}" in MemoryOS, but the project context (00_context.md) is still empty. Help me draft an initial version.
+
+Ask me:
+
+1. What this project is (one sentence)
+2. Why I started it (background, motivation, what problem it solves)
+3. Current state (done, in progress, where I'm stuck)
+4. Key constraints (timeline, resources, what I can't do)
+5. The 2-3 most important things for the next 1-2 weeks
+
+After the Q&A, output the full 00_context.md in the Markdown format below.
+
+\`\`\`markdown
+# ${projectName} — Context
+
+## Goal
+One line: ...
+
+## Background / Why
+...
+
+## Current state
+> Last updated: (today's date)
+- Done:
+- In progress:
+- Stuck on:
+
+## Key constraints
+- Timeline:
+- Resources:
+- Don't do / red lines:
+
+## Next steps
+...
+\`\`\`
+
+Output only the Markdown — no extra explanation.`;
+  }
   return `我刚在 MemoryOS 里新建了一个项目「${projectName}」，但项目背景 00_context.md 还是空的。请帮我整理一份初始内容。
 
 请问我：
@@ -117,8 +192,52 @@ export function buildStartSessionPrompt(opts: {
   context: string;
   decisions: string;
   latestCompactContext: string;
+  lang?: Lang;
 }): string {
+  const lang: Lang = opts.lang ?? "zh";
   const parts: string[] = [];
+
+  if (lang === "en") {
+    parts.push(`Please read my working context below, then continue helping me.`);
+    parts.push(``);
+    parts.push(`---`);
+    parts.push(``);
+    if (opts.aboutMe.trim()) {
+      parts.push(`## About me`);
+      parts.push(opts.aboutMe);
+      parts.push(``);
+    }
+    parts.push(`## Current project`);
+    parts.push(`**${opts.projectName}**`);
+    parts.push(``);
+    if (opts.context.trim()) {
+      parts.push(`### Project context`);
+      parts.push(opts.context);
+      parts.push(``);
+    }
+    if (opts.decisions.trim()) {
+      parts.push(`### Key decisions`);
+      parts.push(opts.decisions);
+      parts.push(``);
+    }
+    if (opts.latestCompactContext.trim()) {
+      parts.push(`### Last session summary`);
+      parts.push(opts.latestCompactContext);
+      parts.push(``);
+    }
+    parts.push(`---`);
+    parts.push(``);
+    parts.push(`After reading, tell me in one sentence what you understand:`);
+    parts.push(`1. Who I am`);
+    parts.push(`2. The project's goal and biggest blocker`);
+    if (opts.latestCompactContext.trim()) {
+      parts.push(`3. Where the last session left off`);
+    }
+    parts.push(``);
+    parts.push(`Once confirmed, let's start today's work.`);
+    return parts.join("\n");
+  }
+
   parts.push(`请先读取以下我的工作上下文，理解后再继续帮我工作。`);
   parts.push(``);
   parts.push(`---`);
@@ -164,7 +283,73 @@ export function buildEndSessionPrompt(opts: {
   context: string;
   decisions: string;
   latestSession: string;
+  lang?: Lang;
 }): string {
+  const lang: Lang = opts.lang ?? "zh";
+
+  if (lang === "en") {
+    return `Based on our conversation, generate a MemoryOS Session Handoff.
+
+Rules:
+1. Don't rehash the entire transcript.
+2. Keep only what's truly needed to continue work next time.
+3. Extract goals, progress, key decisions, open questions, next actions.
+4. If long-term-worthy info surfaced, put it in Suggested Updates.
+5. Don't invent anything that wasn't in this conversation.
+6. Use the Markdown structure below exactly.
+
+---
+
+# MemoryOS Session Handoff
+
+## Metadata
+- Date:
+- Source Tool:
+- Project: ${opts.projectName}
+- Session Goal:
+
+## 1. What We Worked On
+(3-6 bullets)
+
+## 2. Key Decisions
+- Decision:
+  - Reason:
+  - Impact:
+
+## 3. Current Project State
+
+## 4. Open Questions
+
+## 5. Next Actions
+(ordered by priority)
+
+## 6. Suggested Updates to 00_context.md
+(if none, write "No update needed.")
+
+## 7. Suggested Updates to decisions.md
+(if none, write "No update needed.")
+
+## 8. Suggested Updates to about_me.md
+(only if a clear, stable, long-term user preference surfaced)
+
+## 9. Compact Context for Next Session
+(150-250 words, the must-read briefing for the next AI session)
+
+---
+
+Here's the current project context:
+
+## Current 00_context.md
+${opts.context}
+
+## Current decisions.md
+${opts.decisions}
+
+## Latest session handoff
+${opts.latestSession}
+`;
+  }
+
   return `你现在需要根据我们本轮对话，生成一份 MemoryOS Session Handoff。
 
 规则：

@@ -3,6 +3,7 @@ import { Check } from "lucide-react";
 import { ModalShell, ModalHeader, ModalFooter } from "./CopyPromptModal";
 import { parseHandoff } from "../lib/parser";
 import type { ParsedHandoff } from "../types";
+import { useT } from "../lib/i18n";
 
 type Props = {
   onClose: () => void;
@@ -10,6 +11,7 @@ type Props = {
 };
 
 export default function ImportHandoffModal({ onClose, onParsed }: Props) {
+  const t = useT();
   const [text, setText] = useState("");
 
   const detected = useMemo(() => {
@@ -23,9 +25,9 @@ export default function ImportHandoffModal({ onClose, onParsed }: Props) {
 
   return (
     <ModalShell onClose={onClose} width="max-w-xl">
-      <ModalHeader title="Import Handoff" onClose={onClose} />
+      <ModalHeader title={t("import.title")} onClose={onClose} />
       <div className="px-6 pt-5 pb-4">
-        <div className="text-[13px] text-ink-soft mb-2.5">粘贴 AI 输出的 handoff 文本：</div>
+        <div className="text-[13px] text-ink-soft mb-2.5">{t("import.pasteLabel")}</div>
         <textarea
           value={text}
           onChange={(e) => setText(e.target.value)}
@@ -36,23 +38,23 @@ export default function ImportHandoffModal({ onClose, onParsed }: Props) {
           {detected ? (
             <span className="text-[13px] text-ok inline-flex items-center gap-1.5">
               <Check size={14} strokeWidth={1.5} />
-              Detected: {detected.tool} · {detected.date} · {detected.sections} sections
+              {t("import.detected", { tool: detected.tool, date: detected.date, n: detected.sections })}
             </span>
           ) : (
-            <span className="text-xs text-ink-faint">粘贴有效 handoff 后会自动识别</span>
+            <span className="text-xs text-ink-faint">{t("import.autoDetect")}</span>
           )}
         </div>
       </div>
       <ModalFooter>
         <button onClick={onClose} className="h-9 px-3 rounded-md border border-hairline text-[13px] font-medium hover:bg-paper bg-surface transition-colors">
-          Cancel
+          {t("common.cancel")}
         </button>
         <button
           onClick={() => detected && onParsed(text, parseHandoff(text))}
           disabled={!detected}
           className="h-9 px-3 rounded-md bg-slate text-white text-[13px] font-medium disabled:opacity-50 hover:opacity-90 transition-opacity"
         >
-          Parse Handoff
+          {t("import.parseBtn")}
         </button>
       </ModalFooter>
     </ModalShell>

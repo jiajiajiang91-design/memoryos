@@ -12,6 +12,7 @@ tauri-build = { version = "1.5", features = [] }
 [dependencies]
 serde_json = "1.0"
 serde = { version = "1.0", features = ["derive"] }
+trash = "5"
 tauri = { version = "1.5", features = [ "fs-rename-file", "fs-remove-dir", "fs-remove-file", "shell-open", "clipboard-read-text", "fs-exists", "dialog-open", "clipboard-write-text", "dialog-confirm", "dialog-save", "fs-read-dir", "dialog-ask", "fs-write-file", "dialog-message", "fs-create-dir", "fs-read-file", "path-all"] }
 
 [features]

@@ -1,4 +1,5 @@
-export type SourceTool = "ChatGPT" | "Claude" | "Cursor" | "Gemini";
+// 开放字符串 — 8 个预置 + 用户自定义都可。预置清单在 lib/sourceTools.ts。
+export type SourceTool = string;
 export type RiskLevel = "low" | "medium" | "high";
 
 export type ProjectMeta = {

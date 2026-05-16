@@ -1,19 +1,15 @@
 import type { RefObject } from "react";
 import type { Project } from "../types";
+import { tintFor } from "../lib/sourceTools";
+import { useT } from "../lib/i18n";
 
 type Props = {
   project: Project;
   scrollRef: RefObject<HTMLDivElement>;
 };
 
-const TOOL_TINTS: Record<string, string> = {
-  ChatGPT: "bg-[#E8F0E8] text-[#3D6B3D]",
-  Claude:  "bg-[#F5E8E0] text-[#A05536]",
-  Cursor:  "bg-[#E8E8F0] text-[#3D3D6B]",
-  Gemini:  "bg-[#F0E8F0] text-[#6B3D6B]",
-};
-
 export default function MetadataPanel({ project, scrollRef }: Props) {
+  const t = useT();
   const tools = Array.from(new Set(project.sessions.map((s) => s.sourceTool)));
 
   const scrollTo = (id: string) => {
@@ -27,45 +23,45 @@ export default function MetadataPanel({ project, scrollRef }: Props) {
 
   return (
     <aside className="w-60 shrink-0 box-border border-l border-hairline bg-paper pt-14 pb-8 px-6 flex flex-col gap-8 overflow-y-auto">
-      <Block label="状态">
+      <Block label={t("meta.status")}>
         <div className="flex items-center gap-2 text-sm">
           <span className="w-2 h-2 rounded-full bg-ok inline-block" />
-          {project.statusLabel}
+          {project.statusLabel || t("meta.statusProgress")}
         </div>
       </Block>
 
-      <Block label="时间">
+      <Block label={t("meta.time")}>
         <div className="text-[13px] leading-[1.7]">
           <div className="flex justify-between">
-            <span className="text-ink-soft">创建</span>
+            <span className="text-ink-soft">{t("meta.created")}</span>
             <span className="tabular-nums">{project.createdAt.slice(0, 10)}</span>
           </div>
           <div className="flex justify-between">
-            <span className="text-ink-soft">更新</span>
-            <span>{relativeTime(project.updatedAt)}</span>
+            <span className="text-ink-soft">{t("meta.updated")}</span>
+            <span>{relativeTime(project.updatedAt, t)}</span>
           </div>
         </div>
       </Block>
 
-      <Block label="统计">
+      <Block label={t("meta.stats")}>
         <div className="flex gap-4">
-          <Stat label="Sessions" value={project.sessions.length} />
-          <Stat label="Decisions" value={countDecisions(project.decisionsMarkdown)} />
-          <Stat label="Goals" value={project.currentGoalBullets.length || 1} />
+          <Stat label={t("meta.statSessions")} value={project.sessions.length} />
+          <Stat label={t("meta.statDecisions")} value={countDecisions(project.decisionsMarkdown)} />
+          <Stat label={t("meta.statGoals")} value={project.currentGoalBullets.length || 1} />
         </div>
       </Block>
 
-      <Block label="使用 AI">
+      <Block label={t("meta.usedAi")}>
         {tools.length === 0 ? (
           <div className="text-[13px] text-ink-faint">—</div>
         ) : (
           <div className="flex flex-wrap gap-1.5">
-            {tools.map((t) => (
+            {tools.map((tool) => (
               <span
-                key={t}
-                className={`h-[22px] px-2 rounded text-xs font-medium inline-flex items-center ${TOOL_TINTS[t] ?? "bg-surface-soft text-ink-soft"}`}
+                key={tool}
+                className={`h-[22px] px-2 rounded text-xs font-medium inline-flex items-center ${tintFor(tool)}`}
               >
-                {t}
+                {tool}
               </span>
             ))}
           </div>
@@ -74,18 +70,18 @@ export default function MetadataPanel({ project, scrollRef }: Props) {
 
       <div className="h-px bg-hairline" />
 
-      <Block label="页内导航">
+      <Block label={t("meta.pageNav")}>
         <button
           onClick={() => scrollTo("sec-goal")}
           className="block w-full text-left py-1.5 text-[13px] text-ink-soft hover:text-slate transition-colors"
         >
-          当前目标
+          {t("dashboard.currentGoal")}
         </button>
         <button
           onClick={() => scrollTo("sec-sessions")}
           className="block w-full text-left py-1.5 text-[13px] text-ink-soft hover:text-slate transition-colors"
         >
-          最近 Session
+          {t("dashboard.recentSessions")}
         </button>
       </Block>
     </aside>
@@ -115,12 +111,12 @@ function countDecisions(md: string) {
   return (md.match(/^##\s+\d{4}-\d{2}-\d{2}/gm) ?? []).length;
 }
 
-function relativeTime(iso: string) {
-  const t = new Date(iso).getTime();
-  if (Number.isNaN(t)) return "—";
-  const sec = Math.floor((Date.now() - t) / 1000);
-  if (sec < 60) return "刚刚";
-  if (sec < 3600) return `${Math.floor(sec / 60)} 分钟前`;
-  if (sec < 86400) return `${Math.floor(sec / 3600)} 小时前`;
-  return `${Math.floor(sec / 86400)} 天前`;
+function relativeTime(iso: string, t: (key: string, vars?: Record<string, string | number>) => string) {
+  const ms = new Date(iso).getTime();
+  if (Number.isNaN(ms)) return "—";
+  const sec = Math.floor((Date.now() - ms) / 1000);
+  if (sec < 60) return t("common.justNow");
+  if (sec < 3600) return t("common.minutesAgo", { n: Math.floor(sec / 60) });
+  if (sec < 86400) return t("common.hoursAgo", { n: Math.floor(sec / 3600) });
+  return t("common.daysAgo", { n: Math.floor(sec / 86400) });
 }

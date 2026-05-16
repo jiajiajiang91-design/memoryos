@@ -17,11 +17,40 @@ import {
   writeTextFile,
   createDir,
   exists,
-  removeDir,
 } from "@tauri-apps/api/fs";
 import { writeText } from "@tauri-apps/api/clipboard";
+import { invoke } from "@tauri-apps/api/tauri";
 import { join, documentDir } from "@tauri-apps/api/path";
 import type { Project, ProjectMeta, Session, SourceTool } from "../types";
+import { tSync } from "./i18n";
+
+// 示例项目的固定 slug + 默认中文 name(用来判断"用户没改过示例") 。
+// 一旦用户重命名,name 就不再等于这个常量,override 就跳过,展示用户输入的值。
+const SAMPLE_SLUG = "我的第一个项目";
+const SAMPLE_DEFAULT_NAME = "我的第一个项目";
+
+function isUneditedSample(meta: ProjectMeta): boolean {
+  return meta.slug === SAMPLE_SLUG && meta.name === SAMPLE_DEFAULT_NAME;
+}
+
+// 把示例项目的展示字段换成当前语言。不改磁盘,只改返回给 UI 的内容。
+function localizeSampleDisplay(meta: ProjectMeta): ProjectMeta {
+  if (!isUneditedSample(meta)) return meta;
+  return {
+    ...meta,
+    name: tSync("sample.name"),
+    description: tSync("sample.description"),
+    currentGoal: tSync("sample.currentGoal"),
+    currentGoalBullets: [
+      tSync("sample.bullet1"),
+      tSync("sample.bullet2"),
+      tSync("sample.bullet3"),
+      tSync("sample.bullet4"),
+    ],
+    focus: tSync("sample.focus"),
+    statusLabel: tSync("sample.statusLabel"),
+  };
+}
 
 const WORKSPACE_KEY = "memoryos.workspace";
 
@@ -29,11 +58,11 @@ export function loadWorkspace(): string | null {
   return localStorage.getItem(WORKSPACE_KEY);
 }
 
-export async function selectWorkspace(): Promise<string | null> {
+export async function selectWorkspace(title = "Select MemoryOS Workspace"): Promise<string | null> {
   const picked = await open({
     directory: true,
     multiple: false,
-    title: "Select MemoryOS Workspace",
+    title,
   });
   if (typeof picked === "string") {
     localStorage.setItem(WORKSPACE_KEY, picked);
@@ -67,11 +96,11 @@ export async function quickSetupWorkspace(customPath?: string): Promise<string> 
 }
 
 /** 让用户挑一个文件夹位置(然后在那个位置下面建 MemoryOS 子文件夹) */
-export async function pickCustomWorkspaceLocation(): Promise<string | null> {
+export async function pickCustomWorkspaceLocation(title = "Pick a save location"): Promise<string | null> {
   const picked = await open({
     directory: true,
     multiple: false,
-    title: "选择保存位置",
+    title,
   });
   if (typeof picked !== "string") return null;
   return await join(picked, "MemoryOS");
@@ -83,10 +112,7 @@ export async function ensureWorkspaceLayout(workspace: string) {
   if (!(await exists(projectsDir))) await createDir(projectsDir, { recursive: true });
   const aboutMe = await join(workspace, "about_me.md");
   if (!(await exists(aboutMe))) {
-    await writeTextFile(
-      aboutMe,
-      "# About Me\n\n（在这里写你希望所有 AI 长期记住的偏好。这是高风险文件——MemoryOS 默认不会勾选写入它。）\n"
-    );
+    await writeTextFile(aboutMe, tSync("template.aboutMe"));
   }
 }
 
@@ -103,8 +129,8 @@ async function ensureSampleProject(workspace: string) {
     JSON.stringify(
       {
         name: "我的第一个项目",
-        description: "示例项目 — 跑通一次工作流后,可以删掉这个文件夹再建你自己的",
-        currentGoal: "试一次完整流程:在 ChatGPT 或 Claude 聊几句,回到这里点「复制结束 Session 指令」,把生成的 handoff 粘贴回来。",
+        description: "示例项目 — 跑通一次完整流程后,可以删掉再建你自己的",
+        currentGoal: "试一次完整流程:在 ChatGPT 或 Claude 聊几句,回到这里点「复制结束对话指令」,把生成的对话总结粘贴回来。",
         currentGoalBullets: [
           "第 1 步:在外部 AI 完成一段工作",
           "第 2 步:回来点主按钮,复制结束指令",
@@ -113,7 +139,7 @@ async function ensureSampleProject(workspace: string) {
         ],
         focus: "走完一次完整流程",
         progress: 0,
-        statusLabel: "进行中",
+        statusLabel: tSync("meta.statusProgress"),
         createdAt: now,
         updatedAt: now,
       },
@@ -123,11 +149,11 @@ async function ensureSampleProject(workspace: string) {
   );
   await writeTextFile(
     await join(projectDir, "00_context.md"),
-    "# 项目背景\n\n这里写项目的当前状态。MemoryOS 会在你导入 handoff 时,把 AI 总结的更新建议追加到这个文件。\n"
+    tSync("template.sampleContext")
   );
   await writeTextFile(
     await join(projectDir, "decisions.md"),
-    "# 决策日志\n\n这里记录项目的关键决策。每条决策包含原因和影响。\n"
+    tSync("template.sampleDecisions")
   );
 }
 
@@ -148,7 +174,7 @@ export async function listProjects(workspace: string): Promise<ProjectMeta[]> {
       console.warn("Bad project.json for", slug, err);
       continue;
     }
-    out.push({
+    out.push(localizeSampleDisplay({
       slug,
       name: meta.name ?? slug,
       description: meta.description ?? "",
@@ -156,10 +182,10 @@ export async function listProjects(workspace: string): Promise<ProjectMeta[]> {
       currentGoalBullets: meta.currentGoalBullets ?? [],
       focus: meta.focus ?? "",
       progress: meta.progress ?? 0,
-      statusLabel: meta.statusLabel ?? "进行中",
+      statusLabel: meta.statusLabel ?? tSync("meta.statusProgress"),
       createdAt: meta.createdAt ?? new Date().toISOString(),
       updatedAt: meta.updatedAt ?? new Date().toISOString(),
-    });
+    }));
   }
   return out;
 }
@@ -332,7 +358,7 @@ export async function createProject(
   opts: { name: string; description?: string; currentGoal?: string }
 ): Promise<string> {
   let slug = slugify(opts.name);
-  if (!slug) throw new Error("项目名不能为空");
+  if (!slug) throw new Error(tSync("error.projectNameEmpty"));
   // 如果重名,自动加数字后缀
   let candidate = slug;
   let i = 2;
@@ -354,7 +380,7 @@ export async function createProject(
         currentGoalBullets: [],
         focus: "",
         progress: 0,
-        statusLabel: "进行中",
+        statusLabel: tSync("meta.statusProgress"),
         createdAt: now,
         updatedAt: now,
       },
@@ -362,8 +388,14 @@ export async function createProject(
       2
     )
   );
-  await writeTextFile(await join(dir, "00_context.md"), `# ${opts.name} — Context\n\n`);
-  await writeTextFile(await join(dir, "decisions.md"), `# Decisions Log\n\n`);
+  await writeTextFile(
+    await join(dir, "00_context.md"),
+    tSync("template.newContextHeading", { name: opts.name })
+  );
+  await writeTextFile(
+    await join(dir, "decisions.md"),
+    tSync("template.newDecisionsHeading")
+  );
   return slug;
 }
 
@@ -374,20 +406,29 @@ export async function renameProject(
   newName: string
 ): Promise<void> {
   const trimmed = newName.trim();
-  if (!trimmed) throw new Error("项目名不能为空");
+  if (!trimmed) throw new Error(tSync("error.projectNameEmpty"));
   const metaPath = await join(workspace, "projects", slug, "project.json");
-  if (!(await exists(metaPath))) throw new Error("找不到项目");
+  if (!(await exists(metaPath))) throw new Error(tSync("error.projectNotFound"));
   const meta = JSON.parse(await readTextFile(metaPath));
   meta.name = trimmed;
   meta.updatedAt = new Date().toISOString();
   await writeTextFile(metaPath, JSON.stringify(meta, null, 2));
 }
 
-/** 删除项目 — 整个项目文件夹连同 sessions 全部删掉 */
-export async function deleteProject(workspace: string, slug: string): Promise<void> {
+/**
+ * 删除项目 — 整个项目文件夹移到系统回收站（不是永久删）。
+ * 返回被删的完整路径,前端用它在 5 秒内调 restoreProject 还原。
+ */
+export async function deleteProject(workspace: string, slug: string): Promise<string | null> {
   const dir = await join(workspace, "projects", slug);
-  if (!(await exists(dir))) return;
-  await removeDir(dir, { recursive: true });
+  if (!(await exists(dir))) return null;
+  await invoke("move_to_trash", { path: dir });
+  return dir;
+}
+
+/** 从系统回收站还原最近被 deleteProject 删掉的文件夹。 */
+export async function restoreProject(originalPath: string): Promise<void> {
+  await invoke("restore_from_trash", { originalPath });
 }
 
 /** 写入项目的 00_context.md (覆盖) */

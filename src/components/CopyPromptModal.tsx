@@ -1,8 +1,10 @@
 import { useMemo, useState } from "react";
-import { Copy, X, ChevronRight } from "lucide-react";
+import { Copy, X, ChevronRight, Plus, Check } from "lucide-react";
 import type { Project, SourceTool } from "../types";
 import { buildEndSessionPrompt } from "../lib/parser";
 import { copyToClipboard, readContextForPrompt } from "../lib/fs";
+import { PRESET_SOURCE_TOOLS } from "../lib/sourceTools";
+import { useT, useLang } from "../lib/i18n";
 
 type Props = {
   workspace: string;
@@ -12,8 +14,12 @@ type Props = {
 };
 
 export default function CopyPromptModal({ workspace, project, onClose, onCopied }: Props) {
+  const tt = useT();
+  const [lang] = useLang();
   const [files, setFiles] = useState({ context: true, decisions: true, session: true, aboutMe: false });
   const [tool, setTool] = useState<SourceTool>("Claude");
+  const [customName, setCustomName] = useState("");
+  const [customOpen, setCustomOpen] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
 
   const preview = useMemo(
@@ -23,8 +29,9 @@ export default function CopyPromptModal({ workspace, project, onClose, onCopied 
         context: files.context ? project.contextMarkdown : "",
         decisions: files.decisions ? project.decisionsMarkdown : "",
         latestSession: (files.session && project.sessions[0]?.rawMarkdown) || "",
+        lang,
       }),
-    [files, project]
+    [files, project, lang]
   );
 
   const tokenEstimate = Math.round(preview.length / 2.5);
@@ -36,59 +43,120 @@ export default function CopyPromptModal({ workspace, project, onClose, onCopied 
       context: files.context ? ctx.context : "",
       decisions: files.decisions ? ctx.decisions : "",
       latestSession: files.session ? ctx.latestSession : "",
+      lang,
     });
     await copyToClipboard(text);
     onCopied();
   };
 
+  const isCustomActive =
+    !!customName.trim() && !PRESET_SOURCE_TOOLS.includes(customName as any) && tool === customName;
+
+  const confirmCustom = () => {
+    const t = customName.trim();
+    if (!t) return;
+    setTool(t);
+    setCustomOpen(false);
+  };
+
   return (
     <ModalShell onClose={onClose}>
-      <ModalHeader title="Copy End Session Prompt" onClose={onClose} />
+      <ModalHeader title={tt("copyPrompt.title")} onClose={onClose} />
       <div className="px-6 pt-5 pb-6">
-        <div className="text-[13px] text-ink-soft mb-1">Project</div>
+        <div className="text-[13px] text-ink-soft mb-1">{tt("copyPrompt.project")}</div>
         <div className="text-sm font-medium mb-6">{project.name}</div>
 
-        <div className="text-[13px] text-ink-soft mb-2">Include in prompt</div>
-        <FileToggle name="00_context.md" size={`${(project.contextMarkdown.length / 1024).toFixed(1)} KB`}
-          checked={files.context} onChange={(v) => setFiles({ ...files, context: v })} />
-        <FileToggle name="decisions.md" size={`${(project.decisionsMarkdown.length / 1024).toFixed(1)} KB`}
-          checked={files.decisions} onChange={(v) => setFiles({ ...files, decisions: v })} />
-        <FileToggle name="Latest session" size={project.sessions[0]?.date || "—"}
+        <div className="text-[13px] text-ink-soft mb-2">{tt("copyPrompt.includeLabel")}</div>
+        <FileToggle
+          name={tt("copyPrompt.fileContext")}
+          size={`${(project.contextMarkdown.length / 1024).toFixed(1)} KB`}
+          checked={files.context}
+          onChange={(v) => setFiles({ ...files, context: v })}
+        />
+        <FileToggle
+          name={tt("copyPrompt.fileDecisions")}
+          size={`${(project.decisionsMarkdown.length / 1024).toFixed(1)} KB`}
+          checked={files.decisions}
+          onChange={(v) => setFiles({ ...files, decisions: v })}
+        />
+        <FileToggle
+          name={tt("copyPrompt.fileLatestSession")}
+          size={project.sessions[0]?.date || "—"}
           checked={files.session && project.sessions.length > 0}
-          onChange={(v) => setFiles({ ...files, session: v })} />
-        <FileToggle name="about_me.md" size="(global)"
-          checked={files.aboutMe} onChange={(v) => setFiles({ ...files, aboutMe: v })} />
+          onChange={(v) => setFiles({ ...files, session: v })}
+        />
+        <FileToggle
+          name={tt("copyPrompt.fileAboutMe")}
+          size={tt("copyPrompt.globalTag")}
+          checked={files.aboutMe}
+          onChange={(v) => setFiles({ ...files, aboutMe: v })}
+        />
 
-        <div className="text-[13px] text-ink-soft mb-2.5 mt-6">Source Tool</div>
-        <div className="flex gap-6 mb-6">
-          {(["ChatGPT", "Claude", "Cursor", "Gemini"] as SourceTool[]).map((t) => (
-            <RadioPick key={t} label={t} active={tool === t} onClick={() => setTool(t)} />
+        <div className="text-[13px] text-ink-soft mb-2.5 mt-6">{tt("copyPrompt.sourceToolLabel")}</div>
+        <div className="flex flex-wrap gap-1.5">
+          {PRESET_SOURCE_TOOLS.map((t) => (
+            <ToolChip key={t} label={t} active={tool === t} onClick={() => setTool(t)} />
           ))}
-        </div>
-
-        <div className="text-[13px] text-ink-soft mb-3">
-          Estimated tokens: <span className="text-ink font-medium">~{tokenEstimate.toLocaleString()}</span>
+          {isCustomActive && (
+            <ToolChip label={customName} active onClick={() => setTool(customName)} />
+          )}
+          {!customOpen ? (
+            <button
+              onClick={() => setCustomOpen(true)}
+              className="h-7 px-2.5 rounded-md border border-dashed border-ink-faint text-[13px] text-ink-soft inline-flex items-center gap-1 hover:border-slate hover:text-slate transition-colors"
+            >
+              <Plus size={12} strokeWidth={1.5} />
+              {tt("copyPrompt.customBtn")}
+            </button>
+          ) : (
+            <div className="inline-flex items-center gap-1">
+              <input
+                autoFocus
+                value={customName}
+                onChange={(e) => setCustomName(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") confirmCustom();
+                  if (e.key === "Escape") { setCustomOpen(false); setCustomName(""); }
+                }}
+                onBlur={confirmCustom}
+                placeholder={tt("copyPrompt.customPlaceholder")}
+                className="h-7 px-2 border border-slate rounded-md text-[13px] focus:outline-none w-32"
+              />
+              <button
+                onClick={confirmCustom}
+                disabled={!customName.trim()}
+                className="w-7 h-7 rounded-md bg-slate text-white inline-flex items-center justify-center disabled:opacity-30"
+              >
+                <Check size={14} strokeWidth={1.5} />
+              </button>
+            </div>
+          )}
         </div>
 
         <button
           onClick={() => setPreviewOpen(!previewOpen)}
-          className="inline-flex items-center gap-1 text-[13px] font-medium text-slate"
+          className="mt-6 inline-flex items-center gap-1 text-[13px] font-medium text-slate"
         >
           <ChevronRight size={14} strokeWidth={1.5} className={`transition-transform ${previewOpen ? "rotate-90" : ""}`} />
-          Preview prompt
+          {tt("copyPrompt.preview")}
         </button>
         {previewOpen && (
-          <pre className="mt-2 bg-paper border border-hairline rounded p-4 text-xs font-mono leading-[1.7] max-h-52 overflow-y-auto whitespace-pre-wrap">
-            {preview}
-          </pre>
+          <>
+            <div className="text-[12px] text-ink-faint mt-2 mb-1">
+              {tt("copyPrompt.tokenEstimate", { n: tokenEstimate.toLocaleString() })}
+            </div>
+            <pre className="bg-paper border border-hairline rounded p-4 text-xs font-mono leading-[1.7] max-h-52 overflow-y-auto whitespace-pre-wrap">
+              {preview}
+            </pre>
+          </>
         )}
       </div>
       <ModalFooter>
         <button onClick={onClose} className="h-9 px-3 rounded-md border border-hairline text-[13px] font-medium hover:bg-paper bg-surface transition-colors">
-          Cancel
+          {tt("common.cancel")}
         </button>
         <button onClick={handleCopy} className="h-9 px-3 rounded-md bg-slate text-white text-[13px] font-medium inline-flex items-center gap-1.5 hover:opacity-90 transition-opacity">
-          <Copy size={14} strokeWidth={1.5} />Copy Prompt
+          <Copy size={14} strokeWidth={1.5} />{tt("copyPrompt.copyBtn")}
         </button>
       </ModalFooter>
     </ModalShell>
@@ -120,12 +188,16 @@ function CheckBox({ checked, onChange }: { checked: boolean; onChange: (v: boole
   );
 }
 
-function RadioPick({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) {
+function ToolChip({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) {
   return (
-    <button onClick={onClick} className="inline-flex items-center gap-1.5 text-[13px]">
-      <span className={`w-3.5 h-3.5 rounded-full border-[1.5px] flex items-center justify-center ${active ? "border-slate" : "border-ink-faint"}`}>
-        {active && <span className="w-1.5 h-1.5 rounded-full bg-slate" />}
-      </span>
+    <button
+      onClick={onClick}
+      className={`h-7 px-2.5 rounded-md text-[13px] font-medium border transition-colors ${
+        active
+          ? "bg-slate text-white border-slate"
+          : "bg-surface text-ink-soft border-hairline hover:border-slate hover:text-slate"
+      }`}
+    >
       {label}
     </button>
   );

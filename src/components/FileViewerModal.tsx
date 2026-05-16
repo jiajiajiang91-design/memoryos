@@ -2,13 +2,8 @@ import { useEffect } from "react";
 import { X, FileText, ExternalLink } from "lucide-react";
 import { open as shellOpen } from "@tauri-apps/api/shell";
 import type { SourceTool } from "../types";
-
-const TOOL_TINTS: Record<SourceTool, string> = {
-  ChatGPT: "bg-[#E8F0E8] text-[#3D6B3D]",
-  Claude: "bg-[#F0E6DC] text-[#7A4527]",
-  Cursor: "bg-[#E8E8F0] text-[#3D3D6B]",
-  Gemini: "bg-[#F0E8F0] text-[#6B3D6B]",
-};
+import { tintFor } from "../lib/sourceTools";
+import { useT } from "../lib/i18n";
 
 type SessionMeta = {
   date: string;
@@ -28,6 +23,7 @@ type Props = {
 export default function FileViewerModal({
   filename, fullPath, content, sessionMeta, onClose,
 }: Props) {
+  const t = useT();
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
     window.addEventListener("keydown", onKey);
@@ -51,7 +47,13 @@ export default function FileViewerModal({
         <div className="h-14 px-6 border-b border-hairline flex items-center justify-between shrink-0">
           <div className="flex items-center gap-2.5 min-w-0">
             <FileText size={16} strokeWidth={1.5} className="text-ink-soft shrink-0" />
-            <span className="text-[14px] font-mono text-ink-soft truncate">{filename}</span>
+            <span
+              className={`text-[14px] truncate ${
+                /\.md$/.test(filename) ? "font-mono text-ink-soft" : "font-medium text-ink"
+              }`}
+            >
+              {filename}
+            </span>
           </div>
           <button
             onClick={onClose}
@@ -67,7 +69,7 @@ export default function FileViewerModal({
             <span className="tabular-nums text-ink-soft">
               {sessionMeta.date || "—"} {sessionMeta.time && `· ${sessionMeta.time}`}
             </span>
-            <span className={`h-[22px] px-2.5 rounded text-xs font-medium inline-flex items-center ${TOOL_TINTS[sessionMeta.sourceTool] ?? "bg-surface-soft text-ink-soft"}`}>
+            <span className={`h-[22px] px-2.5 rounded text-xs font-medium inline-flex items-center ${tintFor(sessionMeta.sourceTool)}`}>
               {sessionMeta.sourceTool}
             </span>
             <span className="text-ink flex-1 truncate">{sessionMeta.sessionGoal}</span>
@@ -82,7 +84,7 @@ export default function FileViewerModal({
             </pre>
           ) : (
             <div className="text-ink-faint text-[14px] py-12 text-center">
-              这个文件还是空的。
+              {t("fileViewer.empty")}
             </div>
           )}
         </div>
@@ -94,13 +96,13 @@ export default function FileViewerModal({
             className="h-9 px-3 rounded-md text-[13px] font-medium text-ink-soft hover:bg-surface-soft transition-colors inline-flex items-center gap-1.5"
           >
             <ExternalLink size={14} strokeWidth={1.5} />
-            用系统默认程序打开
+            {t("common.openInOS")}
           </button>
           <button
             onClick={onClose}
             className="h-9 px-4 rounded-md bg-ink text-white text-[13px] font-medium hover:opacity-90 transition-opacity"
           >
-            关闭
+            {t("common.close")}
           </button>
         </div>
       </div>

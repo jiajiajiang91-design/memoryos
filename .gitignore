@@ -2,3 +2,10 @@ node_modules
 dist
 .DS_Store
 src-tauri/target
+
+# Claude Code 本地权限/配置(用户私有)
+.clauderules.local
+.claude/
+
+# 本地 dogfooding 产物(截图、slides 等),不进仓库
+docs/

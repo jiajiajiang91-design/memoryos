@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { X, Pencil } from "lucide-react";
+import { useT } from "../lib/i18n";
 
 type Props = {
   initialName: string;
@@ -8,6 +9,7 @@ type Props = {
 };
 
 export default function RenameProjectModal({ initialName, onClose, onRename }: Props) {
+  const t = useT();
   const [name, setName] = useState(initialName);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -36,7 +38,7 @@ export default function RenameProjectModal({ initialName, onClose, onRename }: P
         <div className="h-14 px-6 border-b border-hairline flex items-center justify-between shrink-0">
           <div className="flex items-center gap-2.5">
             <Pencil size={16} strokeWidth={1.5} className="text-slate" />
-            <span className="text-base font-semibold">重命名项目</span>
+            <span className="text-base font-semibold">{t("renameProject.title")}</span>
           </div>
           <button
             onClick={onClose}
@@ -47,7 +49,7 @@ export default function RenameProjectModal({ initialName, onClose, onRename }: P
         </div>
 
         <div className="px-7 py-6">
-          <label className="text-[12px] text-ink-soft font-medium block mb-1.5">新名字</label>
+          <label className="text-[12px] text-ink-soft font-medium block mb-1.5">{t("renameProject.nameLabel")}</label>
           <input
             ref={inputRef}
             value={name}
@@ -56,7 +58,7 @@ export default function RenameProjectModal({ initialName, onClose, onRename }: P
             className="w-full h-10 px-3 border border-hairline rounded-md text-[14px] focus:outline-none focus:border-slate"
           />
           <p className="text-[12px] text-ink-faint mt-2 leading-relaxed">
-            只改显示名,不动文件夹路径。已有的 sessions 和文件都保留。
+            {t("renameProject.note")}
           </p>
         </div>
 
@@ -65,14 +67,14 @@ export default function RenameProjectModal({ initialName, onClose, onRename }: P
             onClick={onClose}
             className="h-9 px-4 rounded-md text-[13px] font-medium text-ink-soft hover:bg-surface-soft transition-colors"
           >
-            取消
+            {t("common.cancel")}
           </button>
           <button
             onClick={submit}
             disabled={!name.trim() || name.trim() === initialName}
             className="h-9 px-4 rounded-md bg-slate text-white text-[13px] font-medium hover:opacity-90 transition-opacity disabled:opacity-30 disabled:cursor-not-allowed"
           >
-            保存
+            {t("renameProject.saveBtn")}
           </button>
         </div>
       </div>

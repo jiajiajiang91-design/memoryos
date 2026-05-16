@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { MoreHorizontal, Pencil, Trash2 } from "lucide-react";
+import { useT } from "../lib/i18n";
 
 type Props = {
   onRename: () => void;
@@ -7,6 +8,7 @@ type Props = {
 };
 
 export default function ProjectKebabMenu({ onRename, onDelete }: Props) {
+  const t = useT();
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
@@ -31,7 +33,7 @@ export default function ProjectKebabMenu({ onRename, onDelete }: Props) {
         className={`w-5 h-5 rounded flex items-center justify-center transition-colors ${
           open ? "bg-surface-soft text-ink" : "text-ink-soft hover:bg-surface-soft hover:text-ink"
         }`}
-        title="更多"
+        title={t("projectMenu.more")}
       >
         <MoreHorizontal size={14} strokeWidth={1.5} />
       </button>
@@ -42,12 +44,12 @@ export default function ProjectKebabMenu({ onRename, onDelete }: Props) {
         >
           <MenuItem
             icon={Pencil}
-            label="重命名"
+            label={t("projectMenu.rename")}
             onClick={() => { setOpen(false); onRename(); }}
           />
           <MenuItem
             icon={Trash2}
-            label="删除"
+            label={t("projectMenu.delete")}
             danger
             onClick={() => { setOpen(false); onDelete(); }}
           />

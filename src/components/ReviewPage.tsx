@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { Check, AlertTriangle, FileText } from "lucide-react";
 import type { Project, ParsedHandoff, UpdateSuggestion } from "../types";
+import { useT } from "../lib/i18n";
 
 type Props = {
   project: Project;
@@ -17,24 +18,35 @@ const RISK_LABEL_COLOR: Record<UpdateSuggestion["riskLevel"], string> = {
 };
 
 export default function ReviewPage({ project, raw, parsed, onCancel, onSave }: Props) {
+  const t = useT();
   const [suggestions, setSuggestions] = useState<UpdateSuggestion[]>(() => buildSuggestions(parsed));
   const toggle = (id: string) =>
     setSuggestions((prev) => prev.map((s) => (s.id === id ? { ...s, selected: !s.selected } : s)));
   const selectedCount = suggestions.filter((s) => s.selected).length;
 
+  const friendlyFile = (name: string): string =>
+    name === "about_me.md" ? t("sidebar.aboutMe") :
+    name === "00_context.md" ? t("sidebar.context") :
+    name === "decisions.md" ? t("sidebar.decisions") : name;
+
+  const RISK_LABEL: Record<UpdateSuggestion["riskLevel"], string> = {
+    low: t("review.riskLow"),
+    medium: t("review.riskMedium"),
+    high: t("review.riskHigh"),
+  };
+
   const sections = useMemo(() => [
-    { label: "Metadata", count: `${Object.keys(parsed.metadata).length} items` },
-    { label: "What We Worked On", count: bulletCount(parsed.whatWeWorkedOn) },
-    { label: "Key Decisions", count: decisionCount(parsed.keyDecisions) },
-    { label: "Current State", count: parsed.currentState ? `${parsed.currentState.length} chars` : "—" },
-    { label: "Open Questions", count: bulletCount(parsed.openQuestions) },
-    { label: "Next Actions", count: bulletCount(parsed.nextActions) },
-    { label: "Compact Context", count: `${parsed.compactContext.length} chars` },
-  ], [parsed]);
+    { label: t("review.sec.metadata"), count: t("review.countItems", { n: Object.keys(parsed.metadata).length }) },
+    { label: t("review.sec.workedOn"), count: bulletCount(parsed.whatWeWorkedOn, t) },
+    { label: t("review.sec.decisions"), count: decisionCount(parsed.keyDecisions, t) },
+    { label: t("review.sec.currentState"), count: parsed.currentState ? t("review.countChars", { n: parsed.currentState.length }) : "—" },
+    { label: t("review.sec.openQuestions"), count: bulletCount(parsed.openQuestions, t) },
+    { label: t("review.sec.nextActions"), count: bulletCount(parsed.nextActions, t) },
+    { label: t("review.sec.compactContext"), count: t("review.countChars", { n: parsed.compactContext.length }) },
+  ], [parsed, t]);
 
   const filename = useMemo(previewFilename, []);
 
-  // suppress unused-var warning for `raw` (it's saved by parent)
   void raw;
 
   return (
@@ -42,21 +54,21 @@ export default function ReviewPage({ project, raw, parsed, onCancel, onSave }: P
       <div className="flex-1 overflow-y-auto">
         <div className="pl-16 pr-12 pt-12 pb-12 max-w-[832px]">
           <div className="text-xs text-ink-soft mb-6">
-            Projects <span className="text-ink-faint mx-1.5">/</span>{project.name}
+            {t("sidebar.projects")} <span className="text-ink-faint mx-1.5">/</span>{project.name}
             <span className="text-ink-faint mx-1.5">/</span>
-            <span className="text-ink">Review Handoff</span>
+            <span className="text-ink">{t("review.breadcrumb")}</span>
           </div>
           <h1 className="text-[32px] font-semibold tracking-[-0.02em] leading-[1.25] mb-2">
-            Review Session Handoff
+            {t("review.title")}
           </h1>
           <div className="inline-flex items-center gap-2.5 text-[13px] text-ink-soft mb-12">
             <FileText size={14} strokeWidth={1.5} />
             <span className="font-mono text-ink">{filename}</span>
             <span className="text-ink-faint">·</span>
-            <span className="text-ok">Ready to save.</span>
+            <span className="text-ok">{t("review.readyToSave")}</span>
           </div>
 
-          <h2 className="text-lg font-semibold mb-4">Parsed sections</h2>
+          <h2 className="text-lg font-semibold mb-4">{t("review.parsedSections")}</h2>
           <div className="mb-20">
             {sections.map((s, i) => (
               <div
@@ -72,7 +84,7 @@ export default function ReviewPage({ project, raw, parsed, onCancel, onSave }: P
 
           <hr className="border-hairline mb-12" />
 
-          <h2 className="text-lg font-semibold mb-6">Suggested Updates</h2>
+          <h2 className="text-lg font-semibold mb-6">{t("review.suggestedUpdates")}</h2>
           {(["low", "medium", "high"] as const).map((risk) => {
             const list = suggestions.filter((s) => s.riskLevel === risk);
             if (!list.length) return null;
@@ -81,12 +93,12 @@ export default function ReviewPage({ project, raw, parsed, onCancel, onSave }: P
                 <div className="flex items-center gap-2.5 mb-1">
                   <RiskDot level={risk} />
                   <span className={`text-xs font-semibold tracking-wider ${RISK_LABEL_COLOR[risk]}`}>
-                    {risk.toUpperCase()} RISK
+                    {RISK_LABEL[risk]}
                   </span>
                   <div className="flex-1 h-px bg-hairline" />
                 </div>
                 {list.map((s) => (
-                  <SuggestionRow key={s.id} s={s} onToggle={() => toggle(s.id)} />
+                  <SuggestionRow key={s.id} s={s} onToggle={() => toggle(s.id)} t={t} friendlyFile={friendlyFile} />
                 ))}
               </div>
             );
@@ -96,14 +108,14 @@ export default function ReviewPage({ project, raw, parsed, onCancel, onSave }: P
 
       <div className="border-t border-hairline bg-paper flex items-center justify-between pl-16 pr-12 shrink-0 py-4">
         <span className="text-[13px] text-ink-soft">
-          {selectedCount} of {suggestions.length} selected
+          {t("review.selectedCount", { selected: selectedCount, total: suggestions.length })}
         </span>
         <div className="flex gap-3">
           <button onClick={onCancel} className="h-9 px-3 rounded-md border border-hairline text-[13px] font-medium hover:bg-paper bg-surface transition-colors">
-            Cancel
+            {t("common.cancel")}
           </button>
           <button onClick={() => onSave(suggestions)} className="h-9 px-3 rounded-md bg-slate text-white text-[13px] font-medium hover:opacity-90 transition-opacity">
-            Save Selected
+            {t("review.saveBtn")}
           </button>
         </div>
       </div>
@@ -125,12 +137,21 @@ function buildSuggestions(p: ParsedHandoff): UpdateSuggestion[] {
       riskLevel: "high",
       content: p.suggestedAboutMeUpdate,
       selected: false,
-      warning: "about_me 是长期身份记忆，只勾选稳定且长期的偏好。",
+      // warning 文案在渲染时取
+      warning: "__aboutMeWarning__",
     });
   return out;
 }
 
-function SuggestionRow({ s, onToggle }: { s: UpdateSuggestion; onToggle: () => void }) {
+function SuggestionRow({
+  s, onToggle, t, friendlyFile,
+}: {
+  s: UpdateSuggestion;
+  onToggle: () => void;
+  t: (key: string, vars?: Record<string, string | number>) => string;
+  friendlyFile: (name: string) => string;
+}) {
+  const warningText = s.warning === "__aboutMeWarning__" ? t("review.aboutMeWarning") : s.warning;
   return (
     <div className="flex items-start gap-3 py-3">
       <button
@@ -145,17 +166,17 @@ function SuggestionRow({ s, onToggle }: { s: UpdateSuggestion; onToggle: () => v
       </button>
       <div className="flex-1">
         <div className="text-sm font-medium mb-1">
-          {s.riskLevel === "low" ? "Save session file" : `Append to ${s.targetFile}`}
+          {s.riskLevel === "low" ? t("review.saveSessionRow") : t("review.appendToRow", { file: friendlyFile(s.targetFile) })}
         </div>
-        {s.warning && (
+        {warningText && (
           <div className="flex items-start gap-1.5 text-xs text-warn mb-2 bg-warn/[.04] px-2.5 py-1.5 rounded">
             <AlertTriangle size={12} strokeWidth={1.75} className="mt-0.5 shrink-0" />
-            <span className="leading-[1.5]">{s.warning}</span>
+            <span className="leading-[1.5]">{warningText}</span>
           </div>
         )}
         {s.content && (
           <div className="text-[13px] text-ink-soft leading-[1.6] px-3 py-2.5 bg-paper border-l-2 border-hairline whitespace-pre-wrap">
-            <span className="text-ink-faint text-xs block mb-1">▸ Preview</span>
+            <span className="text-ink-faint text-xs block mb-1">{t("review.previewLabel")}</span>
             {s.content}
           </div>
         )}
@@ -176,13 +197,13 @@ function RiskDot({ level }: { level: "low" | "medium" | "high" }) {
   return <span className="w-2.5 h-2.5 rounded-full border-[1.5px] border-ink-faint inline-block" />;
 }
 
-function bulletCount(s: string) {
+function bulletCount(s: string, t: (key: string, vars?: Record<string, string | number>) => string) {
   const n = (s.match(/^[-*]/gm) ?? []).length;
-  return n ? `${n} bullets` : "—";
+  return n ? t("review.countBullets", { n }) : "—";
 }
-function decisionCount(s: string) {
+function decisionCount(s: string, t: (key: string, vars?: Record<string, string | number>) => string) {
   const n = (s.match(/Decision:/g) ?? []).length;
-  return n ? `${n} items` : "—";
+  return n ? t("review.countItems", { n }) : "—";
 }
 function previewFilename() {
   const now = new Date();

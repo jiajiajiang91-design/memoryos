@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { X, Copy, Sparkles, Check } from "lucide-react";
 import { copyToClipboard, writeAboutMe, writeProjectContext } from "../lib/fs";
 import { aboutMeBootstrapPrompt, contextBootstrapPrompt } from "../lib/parser";
+import { useT, useLang } from "../lib/i18n";
 
 type Need = "about_me" | "context";
 
@@ -18,6 +19,8 @@ type Props = {
 export default function BootstrapModal({
   workspace, projectSlug, projectName, needs, onClose, onSaved, onToast,
 }: Props) {
+  const t = useT();
+  const [lang] = useLang();
   const [pasteAboutMe, setPasteAboutMe] = useState("");
   const [pasteContext, setPasteContext] = useState("");
   const [savedAboutMe, setSavedAboutMe] = useState(false);
@@ -29,19 +32,13 @@ export default function BootstrapModal({
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
 
-  const handleCopy = async (text: string, label: string) => {
-    await copyToClipboard(text);
-    onToast(`${label} 已复制。粘贴到 AI 让它问你几个问题。`);
-  };
-
   const handleSaveAboutMe = async () => {
     const content = pasteAboutMe.trim();
     if (!content) return;
-    // 剥掉可能的 ```markdown 包裹
     const clean = content.replace(/^```\w*\n?/, "").replace(/\n?```$/, "");
     await writeAboutMe(workspace, clean);
     setSavedAboutMe(true);
-    onToast("已保存到 about_me.md");
+    onToast(t("bootstrap.savedAboutMe"));
     onSaved();
   };
 
@@ -52,7 +49,7 @@ export default function BootstrapModal({
     const clean = content.replace(/^```\w*\n?/, "").replace(/\n?```$/, "");
     await writeProjectContext(workspace, projectSlug, clean);
     setSavedContext(true);
-    onToast("已保存到 00_context.md");
+    onToast(t("bootstrap.savedContext"));
     onSaved();
   };
 
@@ -72,7 +69,7 @@ export default function BootstrapModal({
         <div className="h-14 px-6 border-b border-hairline flex items-center justify-between shrink-0">
           <div className="flex items-center gap-2.5">
             <Sparkles size={18} strokeWidth={1.5} className="text-slate" />
-            <span className="text-base font-semibold">让 AI 帮你完善初始内容</span>
+            <span className="text-base font-semibold">{t("bootstrap.modalTitle")}</span>
           </div>
           <button
             onClick={onClose}
@@ -84,7 +81,7 @@ export default function BootstrapModal({
 
         {/* Intro */}
         <div className="px-7 pt-6 pb-2 text-[13px] text-ink-soft leading-[1.7]">
-          MemoryOS 需要知道你是谁、项目是什么。最快的方式:复制下面的提示词,粘贴到 ChatGPT / Claude,AI 会问你几个问题,然后输出 Markdown,你复制回来粘到下面的框里保存。
+          {t("bootstrap.intro")}
         </div>
 
         {/* Body */}
@@ -92,10 +89,17 @@ export default function BootstrapModal({
           {showAboutMe && (
             <BootstrapSection
               num={1}
-              title="关于我 (about_me.md)"
-              desc="长期身份偏好,所有项目共享"
+              title={t("bootstrap.aboutMeTitle")}
+              desc={t("bootstrap.aboutMeDesc")}
               saved={savedAboutMe}
-              onCopy={() => handleCopy(aboutMeBootstrapPrompt(), "关于我的提示词")}
+              copyLabel={t("bootstrap.copyPromptBtn")}
+              pasteLabel={t("bootstrap.pasteLabel")}
+              savedLabel={t("bootstrap.alreadySaved")}
+              saveLabel={t("common.save")}
+              onCopy={async () => {
+                await copyToClipboard(aboutMeBootstrapPrompt(lang));
+                onToast(t("bootstrap.aboutMePromptCopied"));
+              }}
               pasteValue={pasteAboutMe}
               onPasteChange={setPasteAboutMe}
               onSave={handleSaveAboutMe}
@@ -104,10 +108,17 @@ export default function BootstrapModal({
           {showContext && (
             <BootstrapSection
               num={showAboutMe ? 2 : 1}
-              title={`项目背景 (00_context.md)`}
-              desc={`「${projectName}」的初始状态`}
+              title={t("bootstrap.contextTitle")}
+              desc={t("bootstrap.contextDesc", { name: projectName })}
               saved={savedContext}
-              onCopy={() => handleCopy(contextBootstrapPrompt(projectName), "项目背景的提示词")}
+              copyLabel={t("bootstrap.copyPromptBtn")}
+              pasteLabel={t("bootstrap.pasteLabel")}
+              savedLabel={t("bootstrap.alreadySaved")}
+              saveLabel={t("common.save")}
+              onCopy={async () => {
+                await copyToClipboard(contextBootstrapPrompt(projectName, lang));
+                onToast(t("bootstrap.contextPromptCopied"));
+              }}
               pasteValue={pasteContext}
               onPasteChange={setPasteContext}
               onSave={handleSaveContext}
@@ -121,7 +132,7 @@ export default function BootstrapModal({
             onClick={onClose}
             className="h-9 px-4 rounded-md bg-ink text-white text-[13px] font-medium hover:opacity-90 transition-opacity"
           >
-            完成
+            {t("common.done")}
           </button>
         </div>
       </div>
@@ -130,12 +141,17 @@ export default function BootstrapModal({
 }
 
 function BootstrapSection({
-  num, title, desc, saved, onCopy, pasteValue, onPasteChange, onSave,
+  num, title, desc, saved, savedLabel, copyLabel, pasteLabel, saveLabel,
+  onCopy, pasteValue, onPasteChange, onSave,
 }: {
   num: number;
   title: string;
   desc: string;
   saved: boolean;
+  savedLabel: string;
+  copyLabel: string;
+  pasteLabel: string;
+  saveLabel: string;
   onCopy: () => void;
   pasteValue: string;
   onPasteChange: (v: string) => void;
@@ -153,7 +169,7 @@ function BootstrapSection({
         </div>
         {saved && (
           <span className="text-[12px] text-ok inline-flex items-center gap-1">
-            <Check size={14} strokeWidth={2} /> 已保存
+            <Check size={14} strokeWidth={2} /> {savedLabel}
           </span>
         )}
       </div>
@@ -164,13 +180,11 @@ function BootstrapSection({
           className="h-9 px-3 rounded-md bg-surface border border-hairline text-ink text-[13px] font-medium inline-flex items-center gap-1.5 hover:bg-surface-soft transition-colors"
         >
           <Copy size={14} strokeWidth={1.5} />
-          复制问 AI 的提示词
+          {copyLabel}
         </button>
 
         <div>
-          <label className="text-[12px] text-ink-soft block mb-1.5">
-            把 AI 输出的 Markdown 内容粘贴到这里:
-          </label>
+          <label className="text-[12px] text-ink-soft block mb-1.5">{pasteLabel}</label>
           <textarea
             value={pasteValue}
             onChange={(e) => onPasteChange(e.target.value)}
@@ -184,7 +198,7 @@ function BootstrapSection({
           disabled={!pasteValue.trim()}
           className="h-9 px-3 rounded-md bg-slate text-white text-[13px] font-medium hover:opacity-90 transition-opacity disabled:opacity-30 disabled:cursor-not-allowed"
         >
-          保存
+          {saveLabel}
         </button>
       </div>
     </section>
