@@ -1,0 +1,25 @@
+@import url("https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;600&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap");
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html, body, #root { height: 100%; }
+  body {
+    @apply bg-paper text-ink font-sans antialiased;
+    margin: 0;
+  }
+  ::-webkit-scrollbar { width: 10px; height: 10px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: #E4E4E7; border-radius: 5px; border: 2px solid #FAFAF7; }
+  ::-webkit-scrollbar-thumb:hover { background: #D4D4D8; }
+}
+
+@layer utilities {
+  .animate-fade { animation: mosFade 200ms ease-out; }
+  .animate-rise { animation: mosRise 200ms ease-out; }
+}
+
+@keyframes mosFade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes mosRise { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }

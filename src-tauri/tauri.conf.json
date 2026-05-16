@@ -1,0 +1,57 @@
+{
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "beforeBuildCommand": "npm run build",
+    "devPath": "http://localhost:1420",
+    "distDir": "../dist",
+    "withGlobalTauri": false
+  },
+  "package": {
+    "productName": "MemoryOS",
+    "version": "0.1.0"
+  },
+  "tauri": {
+    "allowlist": {
+      "all": false,
+      "fs": {
+        "all": false,
+        "readFile": true,
+        "writeFile": true,
+        "readDir": true,
+        "createDir": true,
+        "removeFile": true,
+        "removeDir": true,
+        "renameFile": true,
+        "exists": true,
+        "scope": ["**", "$HOME/**", "$DOCUMENT/**", "$DESKTOP/**", "$APPDATA/**", "$DOWNLOAD/**"]
+      },
+      "dialog": { "all": false, "open": true, "save": true, "message": true, "ask": true, "confirm": true },
+      "clipboard": { "all": false, "writeText": true, "readText": true },
+      "path": { "all": true },
+      "window": { "all": false },
+      "shell": { "all": false, "open": "^.+" }
+    },
+    "bundle": {
+      "active": true,
+      "category": "Productivity",
+      "identifier": "com.memoryos.app",
+      "icon": ["icons/32x32.png", "icons/128x128.png", "icons/128x128@2x.png", "icons/icon.ico"],
+      "longDescription": "Local-first cross-AI working memory.",
+      "shortDescription": "Cross-AI working memory",
+      "targets": "all"
+    },
+    "security": { "csp": null },
+    "windows": [
+      {
+        "fullscreen": false,
+        "resizable": true,
+        "title": "MemoryOS",
+        "width": 1320,
+        "height": 800,
+        "minWidth": 1280,
+        "minHeight": 720,
+        "decorations": true
+      }
+    ]
+  }
+}
