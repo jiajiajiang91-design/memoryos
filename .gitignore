@@ -7,5 +7,8 @@ src-tauri/target
 .clauderules.local
 .claude/
 
-# 本地 dogfooding 产物(截图、slides 等),不进仓库
-docs/
+# 本地 dogfooding 产物(slides 等),不进仓库
+# 例外: docs/screenshots/ 给 README 用,需要进仓库
+docs/*
+!docs/screenshots/
+!docs/screenshots/*.png
