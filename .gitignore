@@ -8,7 +8,7 @@ src-tauri/target
 .claude/
 
 # 本地 dogfooding 产物(slides 等),不进仓库
-# 例外: docs/screenshots/ 给 README 用,需要进仓库
+# 例外: docs/screenshots/ 给 README 用,需要进仓库(含 zh/ 和 en/ 子目录)
 docs/*
 !docs/screenshots/
-!docs/screenshots/*.png
+!docs/screenshots/**

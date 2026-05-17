@@ -8,7 +8,7 @@
 
 MemoryOS is a local-first desktop app that gives you continuous working memory across ChatGPT, Claude, Gemini, Cursor, and others. Your context lives as plain Markdown files on your own machine — nothing uploaded, no account, no cloud.
 
-![MemoryOS welcome — working memory across AIs](./docs/screenshots/01_welcome.png)
+![MemoryOS welcome — working memory across AIs](./docs/screenshots/en/01_welcome.png)
 
 ---
 
@@ -42,7 +42,7 @@ Review → Save
 
 Next time, any AI picks up from the handoff in 30 seconds.
 
-![Dashboard — project list on the left, current goal & recent sessions in the middle, metadata on the right](./docs/screenshots/02_dashboard.png)
+![Dashboard — project list on the left, current goal & recent sessions in the middle, metadata on the right](./docs/screenshots/en/02_dashboard.png)
 
 ---
 
@@ -50,7 +50,7 @@ Next time, any AI picks up from the handoff in 30 seconds.
 
 Click the button — MemoryOS bundles your selected context files + a standardized end-session prompt into your clipboard. Pick which AI you're in (ChatGPT / Claude / Gemini / Grok / Cursor / Codex / DeepSeek / Kimi, or a custom name), paste, and the AI outputs a Markdown handoff in the fixed schema.
 
-![Copy end prompt — pick which context to include, pick the AI, preview the prompt](./docs/screenshots/03_end_prompt.png)
+![Copy end prompt — pick which context to include, pick the AI, preview the prompt](./docs/screenshots/en/03_end_prompt.png)
 
 ---
 
@@ -74,7 +74,7 @@ Click the button — MemoryOS bundles your selected context files + a standardiz
 - 📝 **Pure Markdown** — open files in Obsidian, VS Code, anywhere
 - 🎯 **Risk-tiered import** — AI's suggested updates are grouped by risk; you pick what saves
 
-![Help drawer — four steps, one complete loop](./docs/screenshots/04_help.png)
+![Help drawer — four steps, one complete loop](./docs/screenshots/en/04_help.png)
 
 ---
 

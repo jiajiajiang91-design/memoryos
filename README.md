@@ -8,7 +8,7 @@
 
 MemoryOS 是一个本地优先的桌面应用，帮你在 ChatGPT / Claude / Gemini / Cursor 等多个 AI 之间保留连续的工作记忆。所有数据都是你电脑上的 Markdown 文件——不上传任何东西，不需要登录，不依赖任何云服务。
 
-![MemoryOS 欢迎屏 — 跨 AI 的工作记忆](./docs/screenshots/01_welcome.png)
+![MemoryOS 欢迎屏 — 跨 AI 的工作记忆](./docs/screenshots/zh/01_welcome.png)
 
 ---
 
@@ -42,7 +42,7 @@ Review → Save
 
 下次任何 AI 都能从总结里 30 秒续上。
 
-![Dashboard — 主界面，左侧项目列表 / 中间当前目标和最近对话 / 右侧项目元数据](./docs/screenshots/02_dashboard.png)
+![Dashboard — 主界面，左侧项目列表 / 中间当前目标和最近对话 / 右侧项目元数据](./docs/screenshots/zh/02_dashboard.png)
 
 ---
 
@@ -50,7 +50,7 @@ Review → Save
 
 点这个按钮，MemoryOS 把你勾选的上下文文件 + 一段标准化的结束指令打包写进剪贴板。选择你目前在用的 AI（ChatGPT / Claude / Gemini / Grok / Cursor / Codex / DeepSeek / Kimi，或自定义），再粘到 AI 里，它会按固定 Markdown 格式输出一份对话总结。
 
-![复制结束对话指令 — 选择附带哪些上下文、选 AI、预览指令](./docs/screenshots/03_end_prompt.png)
+![复制结束对话指令 — 选择附带哪些上下文、选 AI、预览指令](./docs/screenshots/zh/03_end_prompt.png)
 
 ---
 
@@ -74,7 +74,7 @@ Review → Save
 - 📝 **纯 Markdown** — 用 Obsidian / VS Code / 任何编辑器都能打开
 - 🎯 **风险分级导入** — AI 建议的更新会按风险等级分组，让你勾选保存
 
-![使用帮助抽屉 — 四步走完一次完整流程](./docs/screenshots/04_help.png)
+![使用帮助抽屉 — 四步走完一次完整流程](./docs/screenshots/zh/04_help.png)
 
 ---
 
