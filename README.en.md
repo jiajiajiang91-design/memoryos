@@ -37,10 +37,10 @@ Paste into the AI → it generates a structured handoff
     ↓
 Copy handoff back into MemoryOS → click "+ Import handoff"
     ↓
-Review → Save
+Review (old content strikethrough / new content highlighted) → Save
 ```
 
-Next time, any AI picks up from the handoff in 30 seconds.
+Next time, any AI picks up from the handoff in 30 seconds. Outdated decisions get flagged and retired on confirmation.
 
 ![Dashboard — project list on the left, current goal & recent sessions in the middle, metadata on the right](./docs/screenshots/en/02_dashboard.png)
 
@@ -58,7 +58,7 @@ Click the button — MemoryOS bundles your selected context files + a standardiz
 
 1. **Local-first** — every file is yours, plain Markdown
 2. **AI proposes, you confirm** — nothing writes to disk without your checkbox
-3. **Append-first** — existing content is never overwritten
+3. **Memory stays current** — AI marks what's outdated, you confirm, stale decisions retire — the next AI always gets up-to-date context
 4. **No conversation scraping** — handoffs are user-pasted, never auto-read
 5. **Risk-tiered import** — sessions are low-risk, project context medium, About-Me high (default off + warning)
 6. **Reversible delete** — projects go to system trash with a 5-second in-app Undo
@@ -73,6 +73,9 @@ Click the button — MemoryOS bundles your selected context files + a standardiz
 - 🛡 **System-trash delete** — projects go to OS recycle bin with 5-second in-app Undo
 - 📝 **Pure Markdown** — open files in Obsidian, VS Code, anywhere
 - 🎯 **Risk-tiered import** — AI's suggested updates are grouped by risk; you pick what saves
+- ✏️ **In-app file editing** — core files (About Me / Context / Decisions) can be edited and saved directly in the viewer modal
+- 🔄 **Superseded merge** — AI marks what's outdated in each handoff; Review page shows old (strikethrough) vs new (highlighted); confirm to retire stale content
+- 💬 **One-click feedback** — write a note, one click copies to clipboard and opens GitHub Issues
 
 ![Help drawer — four steps, one complete loop](./docs/screenshots/en/04_help.png)
 
@@ -150,10 +153,11 @@ These "don'ts" are the product position, not a TODO list.
 ## Roadmap
 
 - [x] v0.1.0 — Core loop, project management, bootstrap, Windows installer
-- [x] **v0.1.1 — Bilingual UI / system-trash delete + Undo / UX polish** (current)
-- [ ] v0.2 — Workspace switching, settings panel, dark mode
+- [x] v0.1.1 — Bilingual UI / system-trash delete + Undo / UX polish
+- [x] **v0.1.2 — Fault-tolerant parser / Superseded memory merge / in-app file editing / feedback channel** (current)
+- [ ] v0.2 — Cross-AI output consistency validation + seed-user interviews
 - [ ] v0.3 — Mac / Linux builds, code-signing
-- [ ] v1.0 — In-app Markdown editing (not just viewer)
+- [ ] v1.0 — Full Markdown editor + community
 
 ---
 
