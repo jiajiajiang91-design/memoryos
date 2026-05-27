@@ -138,18 +138,6 @@ Windows installer is ~**1.7 MB**.
 
 ---
 
-## What it doesn't do
-
-- ❌ Cloud sync, accounts
-- ❌ Built-in AI chat (not competing with ChatGPT / Claude)
-- ❌ Browser extensions
-- ❌ Mobile
-- ❌ Auto-scraping AI conversations (handoffs are always user-pasted)
-
-These "don'ts" are the product position, not a TODO list.
-
----
-
 ## Roadmap
 
 - [x] v0.1.0 — Core loop, project management, bootstrap, Windows installer
