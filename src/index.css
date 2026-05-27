@@ -10,10 +10,10 @@
     @apply bg-paper text-ink font-sans antialiased;
     margin: 0;
   }
-  ::-webkit-scrollbar { width: 10px; height: 10px; }
-  ::-webkit-scrollbar-track { background: transparent; }
-  ::-webkit-scrollbar-thumb { background: #E4E4E7; border-radius: 5px; border: 2px solid #FAFAF7; }
-  ::-webkit-scrollbar-thumb:hover { background: #D4D4D8; }
+  ::-webkit-scrollbar { width: 12px; height: 12px; }
+  ::-webkit-scrollbar-track { background: rgba(0, 0, 0, 0.02); border-radius: 6px; }
+  ::-webkit-scrollbar-thumb { background: rgba(0, 0, 0, 0.10); border-radius: 6px; border: 2px solid transparent; background-clip: padding-box; }
+  ::-webkit-scrollbar-thumb:hover { background: rgba(0, 0, 0, 0.20); background-clip: padding-box; border: 2px solid transparent; }
 }
 
 @layer utilities {

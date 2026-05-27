@@ -1,4 +1,5 @@
 import type { RefObject } from "react";
+import { Sparkles } from "lucide-react";
 import type { Project } from "../types";
 import { tintFor } from "../lib/sourceTools";
 import { useT } from "../lib/i18n";
@@ -6,9 +7,10 @@ import { useT } from "../lib/i18n";
 type Props = {
   project: Project;
   scrollRef: RefObject<HTMLDivElement>;
+  onOpenBootstrap?: () => void;
 };
 
-export default function MetadataPanel({ project, scrollRef }: Props) {
+export default function MetadataPanel({ project, scrollRef, onOpenBootstrap }: Props) {
   const t = useT();
   const tools = Array.from(new Set(project.sessions.map((s) => s.sourceTool)));
 
@@ -22,7 +24,7 @@ export default function MetadataPanel({ project, scrollRef }: Props) {
   };
 
   return (
-    <aside className="w-60 shrink-0 box-border border-l border-hairline bg-paper pt-14 pb-8 px-6 flex flex-col gap-8 overflow-y-auto">
+    <aside className="w-60 shrink-0 box-border bg-surface-soft pt-14 pb-8 px-6 flex flex-col gap-8 overflow-y-auto">
       <Block label={t("meta.status")}>
         <div className="flex items-center gap-2 text-sm">
           <span className="w-2 h-2 rounded-full bg-ok inline-block" />
@@ -47,7 +49,6 @@ export default function MetadataPanel({ project, scrollRef }: Props) {
         <div className="flex gap-4">
           <Stat label={t("meta.statSessions")} value={project.sessions.length} />
           <Stat label={t("meta.statDecisions")} value={countDecisions(project.decisionsMarkdown)} />
-          <Stat label={t("meta.statGoals")} value={project.currentGoalBullets.length || 1} />
         </div>
       </Block>
 
@@ -77,6 +78,14 @@ export default function MetadataPanel({ project, scrollRef }: Props) {
         >
           {t("dashboard.currentGoal")}
         </button>
+        {project.contextMarkdown && (
+          <button
+            onClick={() => scrollTo("sec-state")}
+            className="block w-full text-left py-1.5 text-[13px] text-ink-soft hover:text-slate transition-colors"
+          >
+            {t("dashboard.currentState")}
+          </button>
+        )}
         <button
           onClick={() => scrollTo("sec-sessions")}
           className="block w-full text-left py-1.5 text-[13px] text-ink-soft hover:text-slate transition-colors"
@@ -84,6 +93,17 @@ export default function MetadataPanel({ project, scrollRef }: Props) {
           {t("dashboard.recentSessions")}
         </button>
       </Block>
+
+      {onOpenBootstrap && (
+        <button
+          onClick={onOpenBootstrap}
+          title={t("bootstrap.rebuildBtnTip")}
+          className="w-full px-3 py-2 rounded-md border border-hairline bg-surface text-[12px] text-ink-soft hover:bg-surface-soft hover:text-slate transition-colors inline-flex items-center justify-center gap-1.5"
+        >
+          <Sparkles size={13} strokeWidth={1.5} />
+          {t("bootstrap.rebuildBtn")}
+        </button>
+      )}
     </aside>
   );
 }
@@ -107,8 +127,10 @@ function Stat({ label, value }: { label: string; value: number }) {
 }
 
 function countDecisions(md: string) {
-  // count "## YYYY-MM-DD" headers
-  return (md.match(/^##\s+\d{4}-\d{2}-\d{2}/gm) ?? []).length;
+  const headingEntries = (md.match(/^###\s+.+/gm) ?? []).length;
+  const boldEntries = (md.match(/^(?:-\s*)?\*\*[^*\n]+\*\*/gm) ?? []).length;
+  const datedEntries = (md.match(/^\s*\d{4}[-.\/]\d{1,2}[-.\/]\d{1,2}\s*[｜|｜·:：—-]+\s*\S+/gm) ?? []).length;
+  return headingEntries + boldEntries + datedEntries;
 }
 
 function relativeTime(iso: string, t: (key: string, vars?: Record<string, string | number>) => string) {

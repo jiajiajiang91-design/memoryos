@@ -66,10 +66,10 @@ export default function Dashboard(props: Props) {
               </button>
             )}
 
-            <div className="mb-10 flex gap-3 flex-wrap">
+            <div className="mb-10 flex gap-3 flex-wrap items-center">
               <button
                 onClick={props.onCopyStartPrompt}
-                className="h-10 px-4 rounded-md bg-surface border border-hairline text-ink font-medium text-sm inline-flex items-center gap-2 hover:bg-surface-soft transition-colors"
+                className="h-10 px-4 rounded-md bg-surface border border-slate text-slate font-medium text-sm inline-flex items-center gap-2 hover:bg-surface-soft transition-colors"
                 title={t("dashboard.copyStartPromptHint")}
               >
                 <Play size={16} strokeWidth={1.5} />
@@ -83,28 +83,41 @@ export default function Dashboard(props: Props) {
                 <Copy size={16} strokeWidth={1.5} />
                 {t("dashboard.copyEndPrompt")}
               </button>
+              <button
+                onClick={props.onImport}
+                className="ml-auto h-10 px-4 rounded-md bg-slate text-white font-medium text-sm inline-flex items-center gap-2 hover:opacity-90 transition-opacity"
+                title={t("dashboard.importHandoffHint")}
+              >
+                <Plus size={16} strokeWidth={1.5} />
+                {t("dashboard.importHandoff")}
+              </button>
             </div>
 
             <hr className="border-hairline mb-6" />
 
             <section id="sec-goal" className="mb-10">
               <h2 className="text-lg font-semibold tracking-[-0.01em] mb-4">{t("dashboard.currentGoal")}</h2>
-              {project.currentGoal && (
+              {project.currentGoal ? (
                 <p className="text-[15px] leading-[1.75] mb-4">{project.currentGoal}</p>
-              )}
+              ) : project.sessions.length > 0 ? (
+                <p className="text-[15px] leading-[1.75] mb-4 text-ink-soft">
+                  {project.sessions[0].sessionGoal}
+                </p>
+              ) : null}
               {project.currentGoalBullets.length > 0 && (
                 <ul className="text-[15px] leading-[1.75] list-disc pl-5 mb-6">
                   {project.currentGoalBullets.map((b, i) => <li key={i}>{b}</li>)}
                 </ul>
               )}
               <div className="flex items-center gap-8 text-[13px] flex-wrap">
-                {project.progress > 0 && (
+                <div className="inline-flex items-center gap-3">
+                  <span className="text-ink-soft">{t("dashboard.totalSessions")}</span>
+                  <span className="font-medium">{project.sessions.length}</span>
+                </div>
+                {project.sessions.length > 0 && (
                   <div className="inline-flex items-center gap-3">
-                    <span className="text-ink-soft">{t("dashboard.progress")}</span>
-                    <span className="inline-block w-20 h-1 bg-hairline rounded overflow-hidden">
-                      <span className="block h-full bg-slate" style={{ width: `${project.progress}%` }} />
-                    </span>
-                    <span className="font-medium">{project.progress}%</span>
+                    <span className="text-ink-soft">{t("dashboard.lastSession")}</span>
+                    <span className="font-medium">{project.sessions[0].date} · {project.sessions[0].sourceTool}</span>
                   </div>
                 )}
                 {project.focus && (
@@ -116,18 +129,19 @@ export default function Dashboard(props: Props) {
               </div>
             </section>
 
+            {extractCurrentState(project.contextMarkdown) && (
+              <section id="sec-state" className="mb-10">
+                <h2 className="text-lg font-semibold tracking-[-0.01em] mb-4">{t("dashboard.currentState")}</h2>
+                <div className="text-[14px] leading-[1.75] [&_strong]:font-semibold [&_ul]:list-disc [&_ul]:pl-5 [&_ul]:my-1.5 [&_li]:my-0.5">
+                  <MarkdownLite source={extractCurrentState(project.contextMarkdown)!} />
+                </div>
+              </section>
+            )}
+
             <hr className="border-hairline mb-6" />
 
             <section id="sec-sessions" className="mb-20">
-              <div className="flex items-center justify-between mb-4">
-                <h2 className="text-lg font-semibold tracking-[-0.01em]">{t("dashboard.recentSessions")}</h2>
-                <button
-                  onClick={props.onImport}
-                  className="h-8 px-3 rounded-md border border-hairline text-[13px] font-medium inline-flex items-center gap-1.5 bg-surface hover:bg-paper transition-colors"
-                >
-                  <Plus size={14} strokeWidth={1.5} /> {t("dashboard.importHandoff")}
-                </button>
-              </div>
+              <h2 className="text-lg font-semibold tracking-[-0.01em] mb-4">{t("dashboard.recentSessions")}</h2>
               {project.sessions.length === 0 ? (
                 <div className="border border-dashed border-hairline rounded-lg py-12 px-6 text-center">
                   <div className="text-ink-soft font-medium mb-1">{t("dashboard.noSessions")}</div>
@@ -169,12 +183,68 @@ export default function Dashboard(props: Props) {
           </div>
         </div>
 
-        <div className="h-8 flex items-center pl-16 border-t border-hairline text-[12px] text-ink-faint shrink-0">
-          {t("dashboard.autosaved")}
-        </div>
       </div>
 
-      <MetadataPanel project={project} scrollRef={scrollRef} />
+      <MetadataPanel project={project} scrollRef={scrollRef} onOpenBootstrap={props.onOpenBootstrap} />
     </>
   );
+}
+
+function extractCurrentState(md: string): string | null {
+  if (!md) return null;
+  const re = /(?:^|\n)\s*#{1,3}\s*(?:当前状态|Current state|Current State|当前进展|当前情况)[^\n]*\n([\s\S]*?)(?=\n\s*#{1,3}\s|\n---|\n\s*\n_Updated|$)/i;
+  const m = md.match(re);
+  if (!m?.[1]) return null;
+  const dedented = m[1].split("\n").map((l) => l.replace(/^ {1,4}/, "")).join("\n").trim();
+  return dedented || null;
+}
+
+function MarkdownLite({ source }: { source: string }) {
+  const blocks: React.ReactNode[] = [];
+  const lines = source.split("\n");
+  let listItems: { indent: number; html: string }[] = [];
+
+  const flushList = () => {
+    if (!listItems.length) return;
+    blocks.push(
+      <ul key={blocks.length}>
+        {listItems.map((it, i) => (
+          <li key={i} style={{ marginLeft: it.indent * 16 }} dangerouslySetInnerHTML={{ __html: it.html }} />
+        ))}
+      </ul>
+    );
+    listItems = [];
+  };
+
+  const renderInline = (s: string) =>
+    s
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
+      .replace(/`([^`]+)`/g, '<code class="px-1 py-0.5 rounded bg-surface-soft text-[12px]">$1</code>');
+
+  for (const raw of lines) {
+    const line = raw.trimEnd();
+    const listMatch = line.match(/^(\s*)[-*]\s+(.+)/);
+    const headMatch = line.match(/^(#{1,6})\s+(.+)/);
+    if (listMatch) {
+      const indent = Math.floor(listMatch[1].length / 2);
+      listItems.push({ indent, html: renderInline(listMatch[2]) });
+    } else if (headMatch) {
+      flushList();
+      const level = headMatch[1].length;
+      const size = level <= 2 ? "text-[15px]" : "text-[14px]";
+      blocks.push(
+        <div key={blocks.length} className={`${size} font-semibold mt-3 mb-1`} dangerouslySetInnerHTML={{ __html: renderInline(headMatch[2]) }} />
+      );
+    } else if (line.trim()) {
+      flushList();
+      blocks.push(<p key={blocks.length} className="my-2" dangerouslySetInnerHTML={{ __html: renderInline(line) }} />);
+    } else {
+      flushList();
+    }
+  }
+  flushList();
+  return <>{blocks}</>;
 }

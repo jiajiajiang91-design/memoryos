@@ -50,4 +50,8 @@ export type UpdateSuggestion = {
   content: string;
   selected: boolean;
   warning?: string;
+  mode?: "append" | "replace";
+  originalContent?: string;
+  newAddition?: string;
+  superseded?: string[];
 };

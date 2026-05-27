@@ -12,3 +12,6 @@ src-tauri/target
 docs/*
 !docs/screenshots/
 !docs/screenshots/**
+
+# 本地产品思维笔记(docx / 思维导图 / 待办 / 方案文档等), 给我和 Claude 自己看的
+00别忘记产品思维/

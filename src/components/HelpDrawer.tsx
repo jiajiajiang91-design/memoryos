@@ -40,6 +40,16 @@ export default function HelpDrawer({ open, onClose, onTryCopy }: Props) {
           {/* Steps */}
           <h3 className="text-[12px] font-semibold uppercase tracking-wider text-ink-faint mb-5">{t("help.stepsLabel")}</h3>
 
+          <div className="mb-6 p-4 bg-[#FFF5E1] border border-[#EAD9A8] rounded-lg">
+            <div className="flex items-start gap-3">
+              <div className="w-6 h-6 rounded-full bg-[#A37A1C] text-white text-[12px] font-semibold flex items-center justify-center shrink-0">!</div>
+              <div>
+                <div className="text-[14px] font-semibold text-ink mb-1">{t("help.step0Title")}</div>
+                <div className="text-[13px] text-ink-soft leading-[1.7]">{t("help.step0Desc")}</div>
+              </div>
+            </div>
+          </div>
+
           <Step
             n={1}
             title={t("help.step1Title")}

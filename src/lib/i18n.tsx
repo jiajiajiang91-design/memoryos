@@ -76,6 +76,46 @@ const DICT: Record<string, Entry> = {
   "sidebar.decisions": { zh: "决策记录", en: "Decisions" },
   "sidebar.sessionsCount": { zh: "对话历史 ({n})", en: "Sessions ({n})" },
   "sidebar.localMode": { zh: "本地模式", en: "Local mode" },
+  "sidebar.feedback": { zh: "反馈 / 报 Bug", en: "Feedback / Report bug" },
+
+  // ── FeedbackModal ────────────────────────────
+  "feedback.title": { zh: "发送反馈", en: "Send feedback" },
+  "feedback.intro": {
+    zh: "你的反馈帮我把 MemoryOS 做得更好。点击「复制并打开 Issues」，内容会自动复制到剪贴板，浏览器会打开 GitHub Issues 页面，粘贴提交即可。",
+    en: "Your feedback helps me improve MemoryOS. Clicking \"Copy & open Issues\" will copy the content to your clipboard and open GitHub Issues — just paste and submit.",
+  },
+  "feedback.textareaLabel": {
+    zh: "想说什么？（bug / 想法 / 吐槽都行）",
+    en: "What's on your mind? (bug / idea / rant — all welcome)",
+  },
+  "feedback.textareaPlaceholder": {
+    zh: "比如：我导入 ChatGPT 的 handoff 时…",
+    en: "e.g. When I imported a handoff from ChatGPT…",
+  },
+  "feedback.includeStatsLabel": {
+    zh: "附带匿名使用统计",
+    en: "Include anonymous usage stats",
+  },
+  "feedback.statsPreview": {
+    zh: "本地记录了 {n} 条事件，最早 {date}",
+    en: "{n} local events, earliest {date}",
+  },
+  "feedback.statsEmpty": {
+    zh: "本地暂无使用记录（你还没用过导入/Review 流程）",
+    en: "No local events yet (you haven't used the import/Review flow)",
+  },
+  "feedback.privacyNote": {
+    zh: "只含事件类型、长度、是否编辑等元数据，不含任何文件内容或个人信息。",
+    en: "Only event types, lengths, and edit flags — no file content or personal info.",
+  },
+  "feedback.bodyHeading": { zh: "反馈内容", en: "Feedback" },
+  "feedback.statsHeading": { zh: "使用统计", en: "Usage stats" },
+  "feedback.statsSummary": { zh: "{n} 条事件（点击展开）", en: "{n} events (click to expand)" },
+  "feedback.copiedToast": {
+    zh: "已复制到剪贴板，请粘贴到打开的 Issues 页面",
+    en: "Copied to clipboard — paste it into the Issues page that opened",
+  },
+  "feedback.submitBtn": { zh: "复制并打开 Issues", en: "Copy & open Issues" },
   "sidebar.backToHome": { zh: "返回首页", en: "Back to home" },
   "sidebar.refreshProjects": { zh: "刷新项目列表", en: "Refresh projects" },
   "sidebar.newProject": { zh: "新建项目", en: "New project" },
@@ -100,10 +140,16 @@ const DICT: Record<string, Entry> = {
     en: "Paste this when wrapping up to have AI generate a handoff",
   },
   "dashboard.currentGoal": { zh: "当前目标", en: "Current goal" },
-  "dashboard.progress": { zh: "进度", en: "Progress" },
+  "dashboard.currentState": { zh: "当前状态", en: "Current state" },
+  "dashboard.totalSessions": { zh: "对话总数", en: "Sessions" },
+  "dashboard.lastSession": { zh: "最近对话", en: "Last session" },
   "dashboard.focus": { zh: "聚焦", en: "Focus" },
   "dashboard.recentSessions": { zh: "最近对话", en: "Recent sessions" },
   "dashboard.importHandoff": { zh: "导入对话总结", en: "Import handoff" },
+  "dashboard.importHandoffHint": {
+    zh: "粘贴 AI 输出的对话总结，更新决策和项目说明",
+    en: "Paste the AI's handoff to update decisions and context",
+  },
   "dashboard.noSessions": { zh: "还没有对话记录", en: "No sessions yet" },
   "dashboard.noSessionsHint": {
     zh: "点上方按钮生成第一份对话总结。",
@@ -116,6 +162,14 @@ const DICT: Record<string, Entry> = {
   "bootstrap.bannerHint": {
     zh: "让 AI 帮你 30 秒整理一份初始内容",
     en: "Let AI help draft initial content in 30 seconds",
+  },
+  "bootstrap.rebuildBtn": {
+    zh: "重写项目说明",
+    en: "Rewrite project context",
+  },
+  "bootstrap.rebuildBtnTip": {
+    zh: "用 AI 重新生成「项目说明」和「关于我」的初始内容",
+    en: "Regenerate 'Project Context' and 'About Me' with AI",
   },
   "bootstrap.bothEmpty": {
     zh: "你的「关于我」和「项目说明」还是空的",
@@ -144,7 +198,19 @@ const DICT: Record<string, Entry> = {
   },
   "bootstrap.contextTitle": { zh: "项目说明", en: "Project Context" },
   "bootstrap.contextDesc": { zh: "「{name}」的初始状态", en: "Initial state for '{name}'" },
-  "bootstrap.copyPromptBtn": { zh: "复制问 AI 的提示词", en: "Copy AI prompt" },
+  "bootstrap.copyPromptBtn": { zh: "点这里复制提示词，粘贴给你的 AI", en: "Copy this prompt, paste it into your AI" },
+  "bootstrap.stepOneLabel": {
+    zh: "第一步：复制提示词给 AI，让它问你几个问题",
+    en: "Step 1: Copy this prompt to your AI — it will ask you a few questions",
+  },
+  "bootstrap.stepOneHint": {
+    zh: "点击后自动复制到剪贴板，粘贴到 ChatGPT / Claude / 任何 AI 即可",
+    en: "Copied to clipboard — paste into ChatGPT / Claude / any AI",
+  },
+  "bootstrap.stepTwoLabel": {
+    zh: "第二步：把 AI 输出的内容粘贴回这里",
+    en: "Step 2: Paste the AI's output back here",
+  },
   "bootstrap.pasteLabel": {
     zh: "把 AI 输出的 Markdown 内容粘贴到这里:",
     en: "Paste the AI's Markdown output here:",
@@ -185,6 +251,14 @@ const DICT: Record<string, Entry> = {
   },
   "import.detected": { zh: "已识别: {tool} · {date} · {n} 个章节", en: "Detected: {tool} · {date} · {n} sections" },
   "import.autoDetect": { zh: "粘贴有效内容后自动识别", en: "Auto-detected after pasting" },
+  "import.partialDetect": {
+    zh: "部分识别 — 有些章节可能缺失，导入后请检查",
+    en: "Partially detected — some sections may be missing",
+  },
+  "import.rawDetect": {
+    zh: "未识别到标准格式 — 内容将作为原始记录保存",
+    en: "Unrecognized format — will be saved as raw session",
+  },
   "import.parseBtn": { zh: "解析", en: "Parse" },
 
   // ── Review page ──────────────────────────────
@@ -205,11 +279,23 @@ const DICT: Record<string, Entry> = {
   "review.riskHigh": { zh: "高风险", en: "HIGH RISK" },
   "review.saveSessionRow": { zh: "保存这份对话记录", en: "Save this session file" },
   "review.appendToRow": { zh: "追加到「{file}」", en: "Append to '{file}'" },
+  "review.updateFileRow": { zh: "更新「{file}」", en: "Update '{file}'" },
+  "review.replaceWarning": {
+    zh: "这会替换整个文件内容。下滑查看绿色高亮的新增部分，点「编辑」可删掉过时的旧内容。",
+    en: "This will replace the entire file. Scroll down to see green-highlighted additions, click 'Edit' to remove outdated content.",
+  },
+  "review.fullFilePreview": { zh: "▸ 完整文件预览（含新增内容）", en: "▸ Full file preview (with additions)" },
+  "review.newContentLabel": { zh: "↓ 新增内容", en: "↓ New additions" },
+  "review.supersededLabel": { zh: "⚠ 已过时 — 确认后自动删除", en: "⚠ Outdated — will be removed on confirm" },
   "review.aboutMeWarning": {
     zh: "关于我是长期身份记忆,只勾选稳定且长期的偏好。",
     en: "'About Me' is long-term identity memory — only check stable, lasting preferences.",
   },
   "review.previewLabel": { zh: "▸ 预览", en: "▸ Preview" },
+  "review.editBtn": { zh: "编辑", en: "Edit" },
+  "review.currentContentLabel": { zh: "▸ 当前文件内容", en: "▸ Current file content" },
+  "review.showCurrentFile": { zh: "▸ 对比当前内容", en: "▸ Compare with current" },
+  "review.hideCurrentFile": { zh: "▾ 收起当前内容", en: "▾ Hide current content" },
   "review.selectedCount": { zh: "已勾选 {selected} / {total} 项", en: "{selected} of {total} selected" },
   "review.saveBtn": { zh: "保存所选", en: "Save selected" },
   "review.countItems": { zh: "{n} 项", en: "{n} items" },
@@ -224,6 +310,14 @@ const DICT: Record<string, Entry> = {
     en: "When you switch between AIs (ChatGPT, Claude, Cursor…),\nMemoryOS lets context live in local files so any AI can resume in 30 seconds.",
   },
   "help.stepsLabel": { zh: "四步走完一次", en: "FOUR STEPS, ONE LOOP" },
+  "help.step0Title": {
+    zh: "重要：先完善「项目说明」和「关于我」",
+    en: "Important: Set up 'Project Context' and 'About Me' first",
+  },
+  "help.step0Desc": {
+    zh: "新建项目后，点击主页上方的黄色提示条，用 AI 帮你 30 秒生成初始内容。这是后续所有步骤的基础——没有项目说明，AI 就不知道你在做什么，生成的对话总结也没法写入决策和记录。",
+    en: "After creating a project, tap the yellow banner on the dashboard to let AI draft your initial content in 30 seconds. This is the foundation for everything — without project context, AI won't know what you're working on, and handoff summaries can't update your decisions or records.",
+  },
   "help.step1Title": { zh: "在 AI 那边聊完一轮工作", en: "Finish a round of work in any AI" },
   "help.step1Desc": {
     zh: "ChatGPT、Claude、Gemini、Cursor 等都行。聊到一个段落、有结果要记下来的时候。",
@@ -298,6 +392,7 @@ const DICT: Record<string, Entry> = {
 
   // ── File viewer ──────────────────────────────
   "fileViewer.empty": { zh: "这个文件还是空的。", en: "This file is empty." },
+  "fileViewer.editing": { zh: "编辑中", en: "Editing" },
 
   // ── Metadata panel ───────────────────────────
   "meta.status": { zh: "状态", en: "Status" },
@@ -326,6 +421,10 @@ const DICT: Record<string, Entry> = {
   "toast.sessionSaved": {
     zh: "已保存对话总结。更新了 {n} 个文件。",
     en: "Handoff saved. {n} file(s) updated.",
+  },
+  "toast.fileSaved": {
+    zh: "已保存「{name}」",
+    en: "'{name}' saved",
   },
   "toast.created": { zh: "已创建「{name}」", en: "'{name}' created" },
   "toast.createFailed": { zh: "创建失败: {err}", en: "Creation failed: {err}" },

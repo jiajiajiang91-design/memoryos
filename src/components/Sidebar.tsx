@@ -1,4 +1,4 @@
-import { Home, Settings, HelpCircle, Plus, FileText, FolderOpen, RotateCw } from "lucide-react";
+import { Home, Settings, HelpCircle, Plus, FileText, FolderOpen, RotateCw, MessageSquare } from "lucide-react";
 import { open as shellOpen } from "@tauri-apps/api/shell";
 import { createDir, exists } from "@tauri-apps/api/fs";
 import { join } from "@tauri-apps/api/path";
@@ -18,6 +18,7 @@ type Props = {
   onRenameProject: (slug: string) => void;
   onDeleteProject: (slug: string) => void;
   onOpenHelp: () => void;
+  onOpenFeedback: () => void;
   onToast: (msg: string) => void;
   onSwitchWorkspace: () => void;
   onViewCoreFile: (file: "about_me.md" | "00_context.md" | "decisions.md") => void;
@@ -27,7 +28,7 @@ export default function Sidebar(props: Props) {
   const t = useT();
   const {
     workspace, projects, currentSlug, sessionsCount,
-    onOpenHelp, onSelectProject, onNewProject, onRefreshProjects, onToast,
+    onOpenHelp, onOpenFeedback, onSelectProject, onNewProject, onRefreshProjects, onToast,
     onSwitchWorkspace, onViewCoreFile, onRenameProject, onDeleteProject,
   } = props;
 
@@ -59,7 +60,7 @@ export default function Sidebar(props: Props) {
   const hasProject = !!currentSlug;
 
   return (
-    <aside className="w-60 box-border h-full bg-paper border-r border-hairline flex flex-col shrink-0">
+    <aside className="w-60 box-border h-full bg-surface-soft flex flex-col shrink-0">
       <div className="h-14 px-4 flex items-center justify-between shrink-0">
         <button
           onClick={onSwitchWorkspace}
@@ -74,9 +75,10 @@ export default function Sidebar(props: Props) {
 
       <div className="flex-1 overflow-y-auto pt-2">
         <GroupHeader>{t("sidebar.workspace")}</GroupHeader>
+        <Row icon={HelpCircle} label={t("sidebar.help")} onClick={onOpenHelp} accent />
         <Row icon={Home} label={t("sidebar.workspaceOverview")} onClick={openWorkspace} />
         <Row icon={Settings} label={t("sidebar.settings")} onClick={() => onToast(t("sidebar.settingsToast"))} />
-        <Row icon={HelpCircle} label={t("sidebar.help")} onClick={onOpenHelp} />
+        <Row icon={MessageSquare} label={t("sidebar.feedback")} onClick={onOpenFeedback} />
 
         <div className="h-6" />
 
@@ -161,9 +163,10 @@ type RowProps = {
   indent?: string;
   trailing?: React.ReactNode;
   disabled?: boolean;
+  accent?: boolean;
 };
 
-function Row({ icon: Icon, label, selected, onClick, indent, trailing, disabled }: RowProps) {
+function Row({ icon: Icon, label, selected, onClick, indent, trailing, disabled, accent }: RowProps) {
   return (
     <div
       onClick={disabled ? undefined : onClick}
@@ -174,6 +177,7 @@ function Row({ icon: Icon, label, selected, onClick, indent, trailing, disabled 
         disabled
           ? "text-ink-faint cursor-not-allowed"
           : "cursor-pointer hover:bg-slate hover:text-white",
+        accent && !disabled ? "text-slate font-semibold" :
         selected && !disabled ? "bg-surface-soft text-slate" : !disabled ? "text-ink" : "",
       ].join(" ")}
     >

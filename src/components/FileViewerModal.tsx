@@ -1,5 +1,5 @@
-import { useEffect } from "react";
-import { X, FileText, ExternalLink } from "lucide-react";
+import { useEffect, useState } from "react";
+import { X, FileText, ExternalLink, Pencil } from "lucide-react";
 import { open as shellOpen } from "@tauri-apps/api/shell";
 import type { SourceTool } from "../types";
 import { tintFor } from "../lib/sourceTools";
@@ -13,17 +13,24 @@ type SessionMeta = {
 };
 
 type Props = {
-  filename: string;       // 显示在头部的文件名
-  fullPath: string;       // 用于"用系统默认程序打开"
-  content: string;        // markdown 原文
-  sessionMeta?: SessionMeta; // session 文件特有的元数据;普通 markdown 文件不传
+  filename: string;
+  fullPath: string;
+  content: string;
+  sessionMeta?: SessionMeta;
+  editable?: boolean;
   onClose: () => void;
+  onSaveEdit?: (newContent: string) => void;
 };
 
 export default function FileViewerModal({
-  filename, fullPath, content, sessionMeta, onClose,
+  filename, fullPath, content, sessionMeta, editable, onClose, onSaveEdit,
 }: Props) {
   const t = useT();
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(content);
+
+  useEffect(() => { setDraft(content); }, [content]);
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
     window.addEventListener("keydown", onKey);
@@ -33,6 +40,13 @@ export default function FileViewerModal({
   const openInOS = async () => {
     try { await shellOpen(fullPath); } catch (e) { console.error(e); }
   };
+
+  const handleSave = () => {
+    if (onSaveEdit) onSaveEdit(draft);
+    setEditing(false);
+  };
+
+  const isDirty = draft !== content;
 
   return (
     <div
@@ -54,13 +68,27 @@ export default function FileViewerModal({
             >
               {filename}
             </span>
+            {editing && (
+              <span className="text-xs text-[#A05536] font-medium">{t("fileViewer.editing")}</span>
+            )}
           </div>
-          <button
-            onClick={onClose}
-            className="w-7 h-7 rounded flex items-center justify-center text-ink-soft hover:bg-surface-soft transition-colors shrink-0"
-          >
-            <X size={18} strokeWidth={1.5} />
-          </button>
+          <div className="flex items-center gap-1.5">
+            {editable && !editing && (
+              <button
+                onClick={() => setEditing(true)}
+                className="h-7 px-2.5 rounded text-[13px] text-ink-soft hover:bg-surface-soft transition-colors inline-flex items-center gap-1.5"
+              >
+                <Pencil size={13} strokeWidth={1.5} />
+                {t("review.editBtn")}
+              </button>
+            )}
+            <button
+              onClick={onClose}
+              className="w-7 h-7 rounded flex items-center justify-center text-ink-soft hover:bg-surface-soft transition-colors shrink-0"
+            >
+              <X size={18} strokeWidth={1.5} />
+            </button>
+          </div>
         </div>
 
         {/* Metadata strip — only for session files */}
@@ -78,7 +106,13 @@ export default function FileViewerModal({
 
         {/* Content */}
         <div className="flex-1 overflow-y-auto px-7 py-6">
-          {content ? (
+          {editing ? (
+            <textarea
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              className="w-full h-full min-h-[300px] bg-paper border border-hairline rounded-md p-4 font-mono text-[13px] leading-[1.75] text-ink resize-y focus:outline-none focus:border-slate transition-colors"
+            />
+          ) : content ? (
             <pre className="text-[14px] leading-[1.75] whitespace-pre-wrap font-sans text-ink">
               {content}
             </pre>
@@ -98,12 +132,32 @@ export default function FileViewerModal({
             <ExternalLink size={14} strokeWidth={1.5} />
             {t("common.openInOS")}
           </button>
-          <button
-            onClick={onClose}
-            className="h-9 px-4 rounded-md bg-ink text-white text-[13px] font-medium hover:opacity-90 transition-opacity"
-          >
-            {t("common.close")}
-          </button>
+          <div className="flex gap-2.5">
+            {editing ? (
+              <>
+                <button
+                  onClick={() => { setEditing(false); setDraft(content); }}
+                  className="h-9 px-3 rounded-md border border-hairline text-[13px] font-medium hover:bg-paper bg-surface transition-colors"
+                >
+                  {t("common.cancel")}
+                </button>
+                <button
+                  onClick={handleSave}
+                  disabled={!isDirty}
+                  className="h-9 px-4 rounded-md bg-slate text-white text-[13px] font-medium disabled:opacity-50 hover:opacity-90 transition-opacity"
+                >
+                  {t("common.save")}
+                </button>
+              </>
+            ) : (
+              <button
+                onClick={onClose}
+                className="h-9 px-4 rounded-md bg-ink text-white text-[13px] font-medium hover:opacity-90 transition-opacity"
+              >
+                {t("common.close")}
+              </button>
+            )}
+          </div>
         </div>
       </div>
     </div>

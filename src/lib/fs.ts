@@ -441,6 +441,20 @@ export async function writeProjectContext(
   await writeTextFile(path, content);
 }
 
+export async function writeProjectDecisions(
+  workspace: string,
+  slug: string,
+  content: string
+): Promise<void> {
+  const path = await join(workspace, "projects", slug, "decisions.md");
+  await writeTextFile(path, content);
+}
+
+export async function readAboutMe(workspace: string): Promise<string> {
+  const path = await join(workspace, "about_me.md");
+  return (await exists(path)) ? await readTextFile(path) : "";
+}
+
 export async function readContextForPrompt(workspace: string, slug: string) {
   const proj = await readProject(workspace, slug);
   return {

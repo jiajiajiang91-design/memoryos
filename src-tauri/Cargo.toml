@@ -1,6 +1,6 @@
 [package]
 name = "memoryos"
-version = "0.1.1"
+version = "0.1.2"
 description = "MemoryOS — local-first cross-AI working memory"
 authors = ["you"]
 edition = "2021"

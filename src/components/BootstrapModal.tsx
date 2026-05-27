@@ -11,13 +11,19 @@ type Props = {
   projectSlug: string | null;
   projectName: string;
   needs: Need[];
+  existingAboutMe?: string;
+  existingContext?: string;
+  existingDecisions?: string;
+  latestSession?: string;
   onClose: () => void;
   onSaved: () => void;
   onToast: (msg: string) => void;
 };
 
 export default function BootstrapModal({
-  workspace, projectSlug, projectName, needs, onClose, onSaved, onToast,
+  workspace, projectSlug, projectName, needs,
+  existingAboutMe, existingContext, existingDecisions, latestSession,
+  onClose, onSaved, onToast,
 }: Props) {
   const t = useT();
   const [lang] = useLang();
@@ -53,8 +59,9 @@ export default function BootstrapModal({
     onSaved();
   };
 
-  const showAboutMe = needs.includes("about_me");
-  const showContext = needs.includes("context") && projectSlug;
+  const isRebuild = needs.length === 0;
+  const showAboutMe = isRebuild || needs.includes("about_me");
+  const showContext = (isRebuild || needs.includes("context")) && projectSlug;
 
   return (
     <div
@@ -96,8 +103,11 @@ export default function BootstrapModal({
               pasteLabel={t("bootstrap.pasteLabel")}
               savedLabel={t("bootstrap.alreadySaved")}
               saveLabel={t("common.save")}
+              stepOneLabel={t("bootstrap.stepOneLabel")}
+              stepOneHint={t("bootstrap.stepOneHint")}
+              stepTwoLabel={t("bootstrap.stepTwoLabel")}
               onCopy={async () => {
-                await copyToClipboard(aboutMeBootstrapPrompt(lang));
+                await copyToClipboard(aboutMeBootstrapPrompt({ lang, existingAboutMe }));
                 onToast(t("bootstrap.aboutMePromptCopied"));
               }}
               pasteValue={pasteAboutMe}
@@ -115,8 +125,19 @@ export default function BootstrapModal({
               pasteLabel={t("bootstrap.pasteLabel")}
               savedLabel={t("bootstrap.alreadySaved")}
               saveLabel={t("common.save")}
+              stepOneLabel={t("bootstrap.stepOneLabel")}
+              stepOneHint={t("bootstrap.stepOneHint")}
+              stepTwoLabel={t("bootstrap.stepTwoLabel")}
               onCopy={async () => {
-                await copyToClipboard(contextBootstrapPrompt(projectName, lang));
+                await copyToClipboard(
+                  contextBootstrapPrompt({
+                    projectName,
+                    lang,
+                    existingContext,
+                    existingDecisions,
+                    latestSession,
+                  })
+                );
                 onToast(t("bootstrap.contextPromptCopied"));
               }}
               pasteValue={pasteContext}
@@ -142,6 +163,7 @@ export default function BootstrapModal({
 
 function BootstrapSection({
   num, title, desc, saved, savedLabel, copyLabel, pasteLabel, saveLabel,
+  stepOneLabel, stepOneHint, stepTwoLabel,
   onCopy, pasteValue, onPasteChange, onSave,
 }: {
   num: number;
@@ -152,6 +174,9 @@ function BootstrapSection({
   copyLabel: string;
   pasteLabel: string;
   saveLabel: string;
+  stepOneLabel: string;
+  stepOneHint: string;
+  stepTwoLabel: string;
   onCopy: () => void;
   pasteValue: string;
   onPasteChange: (v: string) => void;
@@ -175,16 +200,20 @@ function BootstrapSection({
       </div>
 
       <div className="pl-9 space-y-3">
-        <button
-          onClick={onCopy}
-          className="h-9 px-3 rounded-md bg-surface border border-hairline text-ink text-[13px] font-medium inline-flex items-center gap-1.5 hover:bg-surface-soft transition-colors"
-        >
-          <Copy size={14} strokeWidth={1.5} />
-          {copyLabel}
-        </button>
+        <div className="bg-[#FFF5E1] border border-[#EAD9A8] rounded-lg p-4">
+          <div className="text-[13px] font-medium text-ink mb-2">{stepOneLabel}</div>
+          <button
+            onClick={onCopy}
+            className="w-full h-11 px-4 rounded-md bg-slate text-white text-[14px] font-semibold inline-flex items-center justify-center gap-2 hover:opacity-90 transition-opacity shadow-sm"
+          >
+            <Copy size={16} strokeWidth={1.5} />
+            {copyLabel}
+          </button>
+          <div className="text-[12px] text-ink-faint mt-2">{stepOneHint}</div>
+        </div>
 
         <div>
-          <label className="text-[12px] text-ink-soft block mb-1.5">{pasteLabel}</label>
+          <label className="text-[13px] font-medium text-ink block mb-1.5">{stepTwoLabel}</label>
           <textarea
             value={pasteValue}
             onChange={(e) => onPasteChange(e.target.value)}
@@ -196,7 +225,7 @@ function BootstrapSection({
         <button
           onClick={onSave}
           disabled={!pasteValue.trim()}
-          className="h-9 px-3 rounded-md bg-slate text-white text-[13px] font-medium hover:opacity-90 transition-opacity disabled:opacity-30 disabled:cursor-not-allowed"
+          className="w-full h-10 px-3 rounded-md bg-slate text-white text-[14px] font-semibold hover:opacity-90 transition-opacity disabled:opacity-30 disabled:cursor-not-allowed"
         >
           {saveLabel}
         </button>

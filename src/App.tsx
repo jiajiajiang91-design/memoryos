@@ -17,6 +17,10 @@ import {
   renameProject,
   deleteProject,
   restoreProject,
+  writeAboutMe,
+  writeProjectContext,
+  writeProjectDecisions,
+  readAboutMe,
 } from "./lib/fs";
 import { ask } from "@tauri-apps/api/dialog";
 import { buildStartSessionPrompt } from "./lib/parser";
@@ -29,12 +33,13 @@ import ImportHandoffModal from "./components/ImportHandoffModal";
 import ReviewPage from "./components/ReviewPage";
 import FileViewerModal from "./components/FileViewerModal";
 import BootstrapModal from "./components/BootstrapModal";
+import FeedbackModal from "./components/FeedbackModal";
 import NewProjectModal from "./components/NewProjectModal";
 import RenameProjectModal from "./components/RenameProjectModal";
 import LanguageToggle from "./components/LanguageToggle";
 import { useT, useLang } from "./lib/i18n";
 
-type ReviewState = { raw: string; parsed: ParsedHandoff } | null;
+type ReviewState = { raw: string; parsed: ParsedHandoff; aboutMe: string } | null;
 
 // 把路径 "C:\Users\xxx\Documents\MemoryOS" 转成 "Documents / MemoryOS"
 function friendlyLocation(path: string): string {
@@ -50,7 +55,7 @@ export default function App() {
   const [projects, setProjects] = useState<ProjectMeta[]>([]);
   const [currentSlug, setCurrentSlug] = useState<string | null>(null);
   const [project, setProject] = useState<Project | null>(null);
-  const [modal, setModal] = useState<null | "copy" | "import">(null);
+  const [modal, setModal] = useState<null | "copy" | "import" | "feedback">(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [bannerDismissed, setBannerDismissed] = useState(
     () => localStorage.getItem("memoryos.bannerDismissed") === "1"
@@ -74,13 +79,14 @@ export default function App() {
   const [setupPath, setSetupPath] = useState<string>("");
   const [viewingSession, setViewingSession] = useState<string | null>(null);
   const [viewingCoreFile, setViewingCoreFile] = useState<
-    null | { filename: string; fullPath: string; content: string }
+    null | { filename: string; fullPath: string; content: string; rawFile: string }
   >(null);
   const [bootstrapNeeds, setBootstrapNeeds] = useState<{ needsAboutMe: boolean; needsContext: boolean }>({
     needsAboutMe: false,
     needsContext: false,
   });
   const [bootstrapOpen, setBootstrapOpen] = useState(false);
+  const [aboutMeContent, setAboutMeContent] = useState("");
   const [newProjectOpen, setNewProjectOpen] = useState(false);
   const [renamingSlug, setRenamingSlug] = useState<string | null>(null);
 
@@ -176,6 +182,12 @@ export default function App() {
       } catch (e) {
         console.warn("bootstrap detect failed", e);
       }
+      try {
+        const am = await readAboutMe(workspace);
+        setAboutMeContent(am);
+      } catch (e) {
+        console.warn("about_me read failed", e);
+      }
     })();
   }, [workspace, currentSlug, refreshKey]);
 
@@ -214,9 +226,10 @@ export default function App() {
     setTimeout(() => setToast(null), 3000);
   };
 
-  const onParsed = (raw: string, parsed: ParsedHandoff) => {
+  const onParsed = async (raw: string, parsed: ParsedHandoff) => {
     setModal(null);
-    setReview({ raw, parsed });
+    const aboutMe = workspace ? await readAboutMe(workspace) : "";
+    setReview({ raw, parsed, aboutMe });
   };
 
   const onReviewSave = async (suggestions: UpdateSuggestion[]) => {
@@ -227,7 +240,14 @@ export default function App() {
         await saveSession(workspace, project.slug, review.raw);
         saved++;
       } else if (s.targetFile && s.content) {
-        await appendToFile(workspace, project.slug, s.targetFile, s.content);
+        if (s.mode === "replace") {
+          if (s.targetFile === "00_context.md") await writeProjectContext(workspace, project.slug, s.content);
+          else if (s.targetFile === "decisions.md") await writeProjectDecisions(workspace, project.slug, s.content);
+          else if (s.targetFile === "about_me.md") await writeAboutMe(workspace, s.content);
+          else await appendToFile(workspace, project.slug, s.targetFile, s.content);
+        } else {
+          await appendToFile(workspace, project.slug, s.targetFile, s.content);
+        }
         saved++;
       }
     }
@@ -415,6 +435,7 @@ export default function App() {
           }
         }}
         onOpenHelp={() => setDrawerOpen(true)}
+        onOpenFeedback={() => setModal("feedback")}
         onToast={showToast}
         onSwitchWorkspace={() => {
           localStorage.removeItem("memoryos.workspace");
@@ -432,7 +453,7 @@ export default function App() {
               ? await join(workspace, "about_me.md")
               : await join(workspace, "projects", currentSlug ?? "", file);
           const content = (await exists(fullPath)) ? await readTextFile(fullPath) : "";
-          setViewingCoreFile({ filename: coreFileLabel(file), fullPath, content });
+          setViewingCoreFile({ filename: coreFileLabel(file), fullPath, content, rawFile: file });
         }}
       />
 
@@ -441,6 +462,9 @@ export default function App() {
           project={project}
           raw={review.raw}
           parsed={review.parsed}
+          currentContext={project.contextMarkdown}
+          currentDecisions={project.decisionsMarkdown}
+          currentAboutMe={review.aboutMe}
           onCancel={() => setReview(null)}
           onSave={onReviewSave}
         />
@@ -494,6 +518,9 @@ export default function App() {
       {modal === "import" && (
         <ImportHandoffModal onClose={() => setModal(null)} onParsed={onParsed} />
       )}
+      {modal === "feedback" && (
+        <FeedbackModal onClose={() => setModal(null)} onToast={showToast} />
+      )}
 
       {viewingSession && project && workspace && (() => {
         const s = project.sessions.find((x) => x.filename === viewingSession);
@@ -514,7 +541,18 @@ export default function App() {
           filename={viewingCoreFile.filename}
           fullPath={viewingCoreFile.fullPath}
           content={viewingCoreFile.content}
+          editable
           onClose={() => setViewingCoreFile(null)}
+          onSaveEdit={async (newContent) => {
+            if (!workspace || !currentSlug) return;
+            const f = viewingCoreFile.rawFile;
+            if (f === "about_me.md") await writeAboutMe(workspace, newContent);
+            else if (f === "00_context.md") await writeProjectContext(workspace, currentSlug, newContent);
+            else if (f === "decisions.md") await writeProjectDecisions(workspace, currentSlug, newContent);
+            setViewingCoreFile(null);
+            setRefreshKey((k) => k + 1);
+            showToast(t("toast.fileSaved", { name: viewingCoreFile.filename }));
+          }}
         />
       )}
 
@@ -565,6 +603,10 @@ export default function App() {
             ...(bootstrapNeeds.needsAboutMe ? (["about_me"] as const) : []),
             ...(bootstrapNeeds.needsContext ? (["context"] as const) : []),
           ]}
+          existingAboutMe={aboutMeContent}
+          existingContext={project?.contextMarkdown ?? ""}
+          existingDecisions={project?.decisionsMarkdown ?? ""}
+          latestSession={project?.sessions[0]?.rawMarkdown ?? ""}
           onClose={() => setBootstrapOpen(false)}
           onSaved={() => setRefreshKey((k) => k + 1)}
           onToast={showToast}
