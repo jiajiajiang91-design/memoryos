@@ -8,6 +8,8 @@
 
 MemoryOS 是一个本地优先的桌面应用，帮你在 ChatGPT / Claude / Gemini / Cursor 等多个 AI 之间保留连续的工作记忆。所有数据都是你电脑上的 Markdown 文件——不上传任何东西，不需要登录，不依赖任何云服务。
 
+> **v0.2 新增**：支持 AI 通过 MCP **直接连接**你的记忆。在 Claude Desktop 里装上扩展，它就能直接读取你的项目上下文、并把对话总结写回 MemoryOS 的收件箱等你确认——不用再手动复制粘贴。
+
 ![MemoryOS 欢迎屏 — 跨 AI 的工作记忆](./docs/screenshots/zh/01_welcome.png)
 
 ---
@@ -46,6 +48,22 @@ Review（旧内容划线 / 新内容高亮）→ Save
 
 ---
 
+## 连接 AI：直接读写（v0.2 新增）
+
+复制粘贴之外，从 v0.2 起支持 AI 通过 **MCP** 直接连上你的记忆。以 Claude Desktop 为例：在 设置 → Extensions 里装上 `memoryos.mcpb`，填入你的工作区路径，Claude 就拿到三个工具——**列出项目 / 读取项目记忆 / 暂存对话总结**。
+
+![在 Claude Desktop 里启用 MemoryOS 扩展 — 已启用 + 工作区路径 + 三个工具](./docs/screenshots/zh/05_connect_claude.png)
+
+之后开新对话，直接让 Claude「读一下我的项目记忆」，它就能拿到你的上下文继续干活；工作结束时让它「暂存这轮总结」即可。
+
+![Claude 直接调用 MemoryOS 读取项目记忆](./docs/screenshots/zh/06_mcp_call.png)
+
+> **关键红线**：AI 写回的内容**不会**直接进正式记忆，而是先落进 MemoryOS 的**收件箱（Inbox）**等你逐条确认。你始终是最后那道关。
+
+> 网页版 ChatGPT / Gemini 等暂时连不了本地 MCP（浏览器沙箱限制），这些 AI 继续用复制粘贴即可——最后都汇进同一个收件箱。
+
+---
+
 ## 「复制结束对话指令」做了什么
 
 点这个按钮，MemoryOS 把你勾选的上下文文件 + 一段标准化的结束指令打包写进剪贴板。选择你目前在用的 AI（ChatGPT / Claude / Gemini / Grok / Cursor / Codex / DeepSeek / Kimi，或自定义），再粘到 AI 里，它会按固定 Markdown 格式输出一份对话总结。
@@ -57,7 +75,7 @@ Review（旧内容划线 / 新内容高亮）→ Save
 ## 设计原则
 
 1. **本地优先** — 所有数据是你拥有的 Markdown 文件
-2. **AI 总结，用户确认** — 每个写入都要勾选 checkbox
+2. **AI 总结，用户确认** — 每个写入都要勾选 checkbox；AI 通过 MCP 写回也一样，先进收件箱待审，确认后才入库
 3. **记忆保持现时** — AI 标出过时内容，你确认后旧决策退场，下一个 AI 拿到的永远是最新上下文
 4. **不抓对话** — handoff 由你复制粘贴，从不偷偷读取
 5. **风险分级** — 对话总结低风险（默认保存）/ 项目说明中风险 / 关于我高风险（默认不勾 + 警告）
@@ -75,6 +93,8 @@ Review（旧内容划线 / 新内容高亮）→ Save
 - 🎯 **风险分级导入** — AI 建议的更新会按风险等级分组，让你勾选保存
 - ✏️ **App 内文件编辑** — 核心资料（关于我 / 项目说明 / 决策记录）可以直接在弹窗里编辑保存
 - 🔄 **Superseded 智能合并** — AI 标注哪些旧内容过时，Review 页划线对比新旧，确认后旧段退场
+- 🔌 **连接 AI（MCP）** — Claude Desktop 等客户端可直接读取记忆、写回总结，无需复制粘贴
+- 📥 **记忆收件箱（Inbox）** — AI 写回的总结先进待审收件箱，你确认后才入正式记忆
 - 💬 **一键反馈** — 写完一键复制到剪贴板 + 打开 GitHub Issues 页面提交
 
 ![使用帮助抽屉 — 四步走完一次完整流程](./docs/screenshots/zh/04_help.png)
@@ -142,9 +162,10 @@ MemoryOS/
 
 - [x] v0.1.0 — 核心闭环、项目管理、Bootstrap 引导、Windows 安装包
 - [x] v0.1.1 — 中英双语 / 删除走系统回收站 + Undo / UX 打磨
-- [x] **v0.1.2 — 解析容错 / Superseded 记忆合并 / App 内文件编辑 / 反馈通道**（当前）
-- [ ] v0.2 — 跨 AI 输出一致性验证 + 种子用户访谈
-- [ ] v0.3 — Mac / Linux build、代码签名
+- [x] v0.1.2 — 解析容错 / Superseded 记忆合并 / App 内文件编辑 / 反馈通道
+- [x] **v0.2.0 — 连接 AI（MCP）/ 记忆收件箱 + Review 入库 / Claude Desktop 一键扩展**（当前）
+- [ ] v0.3 — 更多 AI 客户端连接 / 浏览器扩展探索 / 种子用户访谈
+- [ ] v0.4 — Mac / Linux build、代码签名
 - [ ] v1.0 — 完整 Markdown 编辑器 + 社区
 
 ---

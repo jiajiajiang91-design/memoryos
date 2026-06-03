@@ -17,12 +17,24 @@ import {
   writeTextFile,
   createDir,
   exists,
+  renameFile,
+  removeFile,
 } from "@tauri-apps/api/fs";
 import { writeText } from "@tauri-apps/api/clipboard";
 import { invoke } from "@tauri-apps/api/tauri";
 import { join, documentDir } from "@tauri-apps/api/path";
-import type { Project, ProjectMeta, Session, SourceTool } from "../types";
+import type { Project, ProjectMeta, Session, InboxItem, InboxStatus, McpState } from "../types";
+import { inboxFilename } from "./inbox";
+import {
+  parseSessionFile,
+  isSessionFile,
+  compareSessionsDesc,
+  extractLatestCompactContext,
+} from "./sessionParse";
 import { tSync } from "./i18n";
+
+// 兼容旧导入路径：parseSessionFile 现住在 sessionParse.ts（app 与 MCP server 共享）。
+export { parseSessionFile };
 
 // 示例项目的固定 slug + 默认中文 name(用来判断"用户没改过示例") 。
 // 一旦用户重命名,name 就不再等于这个常量,override 就跳过,展示用户输入的值。
@@ -207,58 +219,31 @@ export async function readProject(workspace: string, slug: string): Promise<Proj
     const files = await readDir(sessionsDir);
     for (const f of files) {
       const name = f.name ?? "";
-      if (!name.endsWith(".md")) continue;
-      // skip non-session files like README.md, notes.md, INDEX.md
-      if (/^(README|NOTES?|INDEX|TEMPLATE)/i.test(name)) continue;
+      if (!isSessionFile(name)) continue;
       const path = await join(sessionsDir, name);
       const raw = await readTextFile(path);
       sessions.push(parseSessionFile(name, raw));
     }
-    sessions.sort((a, b) => (a.date + a.time < b.date + b.time ? 1 : -1));
+    sessions.sort(compareSessionsDesc);
   }
   return { ...meta, contextMarkdown, decisionsMarkdown, sessions };
-}
-
-export function parseSessionFile(filename: string, raw: string): Session {
-  // Try multiple historical naming conventions:
-  //   session_2026-05-15_1746.md       → date 2026-05-15, time 17:46  (V1 spec)
-  //   Session_Handoff_2026-04-30.md    → date 2026-04-30, no time
-  //   2026-03-23.md                    → date 2026-03-23, no time
-  let date = "";
-  let time = "";
-
-  // try full v1 spec
-  const v1 = filename.match(/session_(\d{4}-\d{2}-\d{2})_(\d{2})(\d{2})/i);
-  if (v1) {
-    date = v1[1];
-    time = `${v1[2]}:${v1[3]}`;
-  } else {
-    // fall back: any YYYY-MM-DD anywhere in the name
-    const dateOnly = filename.match(/(\d{4}-\d{2}-\d{2})/);
-    if (dateOnly) date = dateOnly[1];
-  }
-
-  const toolMatch = raw.match(/Source Tool:\s*(\w+)/i);
-  const goalMatch =
-    raw.match(/Session Goal:\s*(.+)/i) ??
-    raw.match(/^#\s+(.+)/m); // fall back to first H1 in the file
-  return {
-    filename,
-    date,
-    time,
-    sourceTool: ((toolMatch?.[1] ?? "Claude") as SourceTool),
-    sessionGoal: goalMatch?.[1]?.trim() ?? filename.replace(/\.md$/, ""),
-    rawMarkdown: raw,
-  };
 }
 
 export async function saveSession(workspace: string, slug: string, raw: string): Promise<string> {
   const now = new Date();
   const ymd = now.toISOString().slice(0, 10);
   const hm = now.toTimeString().slice(0, 5).replace(":", "");
-  const filename = `session_${ymd}_${hm}.md`;
   const dir = await join(workspace, "projects", slug, "sessions");
   if (!(await exists(dir))) await createDir(dir, { recursive: true });
+  // 防覆盖（PRD §7）：同分钟 apply 多条时自动加 _2/_3…，与 createProject 去重一致，
+  // 文件名仍是 session_YYYY-MM-DD_HHmm[_n].md，parseSessionFile 仍能解析。
+  const base = `session_${ymd}_${hm}`;
+  let filename = `${base}.md`;
+  let n = 2;
+  while (await exists(await join(dir, filename))) {
+    filename = `${base}_${n}.md`;
+    n++;
+  }
   const path = await join(dir, filename);
   await writeTextFile(path, raw);
   await touchProjectUpdatedAt(workspace, slug);
@@ -468,18 +453,114 @@ export async function readContextForStartPrompt(workspace: string, slug: string)
   const aboutMePath = await join(workspace, "about_me.md");
   const aboutMe = (await exists(aboutMePath)) ? await readTextFile(aboutMePath) : "";
   const proj = await readProject(workspace, slug);
-  // Try to extract Compact Context section from latest session
-  let latestCompact = "";
-  const latestRaw = proj.sessions[0]?.rawMarkdown ?? "";
-  const m = latestRaw.match(
-    /##\s*\d*\.?\s*Compact Context[^\n]*\n([\s\S]*?)(?=\n##\s|$)/i
-  );
-  if (m) latestCompact = m[1].trim();
-  else latestCompact = latestRaw.slice(0, 800); // fallback: first 800 chars
+  const latestCompact = extractLatestCompactContext(proj.sessions[0]?.rawMarkdown ?? "");
   return {
     aboutMe,
     context: proj.contextMarkdown,
     decisions: proj.decisionsMarkdown,
     latestCompactContext: latestCompact,
   };
+}
+
+// ── Memory Inbox（PRD v0.3.1 §4.2/§7）─────────────────────
+// .memoryos/inbox/   待审结构化 handoff（filename-safe JSON）
+// .memoryos/archive/ apply/discard 后移到这里（幂等）
+// 埋点不在这里——在 %APPDATA%/memoryos/（见 telemetry.ts）。
+
+async function inboxDir(workspace: string): Promise<string> {
+  const dir = await join(workspace, ".memoryos", "inbox");
+  if (!(await exists(dir))) await createDir(dir, { recursive: true });
+  return dir;
+}
+
+async function archiveDir(workspace: string): Promise<string> {
+  const dir = await join(workspace, ".memoryos", "archive");
+  if (!(await exists(dir))) await createDir(dir, { recursive: true });
+  return dir;
+}
+
+/**
+ * 写一个 InboxItem 到 inbox/。原子写：先写 .tmp 再 rename，避免 app 读到半写 JSON。
+ * 返回写入的文件名。
+ */
+export async function writeInboxItem(workspace: string, item: InboxItem): Promise<string> {
+  const dir = await inboxDir(workspace);
+  const filename = inboxFilename(item);
+  const finalPath = await join(dir, filename);
+  const tmpPath = await join(dir, `.${filename}.tmp`);
+  await writeTextFile(tmpPath, JSON.stringify(item, null, 2));
+  await renameFile(tmpPath, finalPath);
+  return filename;
+}
+
+/** 读 inbox/ 里所有 item（可按 status 过滤）。坏 JSON 跳过。 */
+export async function listInboxItems(
+  workspace: string,
+  status?: InboxStatus
+): Promise<{ filename: string; item: InboxItem }[]> {
+  const dir = await join(workspace, ".memoryos", "inbox");
+  if (!(await exists(dir))) return [];
+  const entries = await readDir(dir);
+  const out: { filename: string; item: InboxItem }[] = [];
+  for (const e of entries) {
+    const name = e.name ?? "";
+    if (!name.endsWith(".json") || name.startsWith(".")) continue;
+    try {
+      const item = JSON.parse(await readTextFile(await join(dir, name))) as InboxItem;
+      if (status && item.status !== status) continue;
+      out.push({ filename: name, item });
+    } catch (err) {
+      console.warn("bad inbox item", name, err);
+    }
+  }
+  // 新的在前
+  out.sort((a, b) => (a.item.createdAt < b.item.createdAt ? 1 : -1));
+  return out;
+}
+
+/** badge 只数 pending。 */
+export async function countPendingInbox(workspace: string): Promise<number> {
+  return (await listInboxItems(workspace, "pending")).length;
+}
+
+/**
+ * 读 .memoryos/mcp_state.json（连接状态）。server 每次工具调用后写，app focus 时读。
+ * 文件不存在 / 坏 JSON → null（= 还没检测到任何 MCP 活动）。
+ */
+export async function readMcpState(workspace: string): Promise<McpState | null> {
+  const path = await join(workspace, ".memoryos", "mcp_state.json");
+  if (!(await exists(path))) return null;
+  try {
+    return JSON.parse(await readTextFile(path)) as McpState;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * 把 inbox/ 里的某个 item 标记 applied/discarded 并移到 archive/（幂等）。
+ * 文件已不在 inbox（已处理）时静默返回，避免重复入库/重复归档。
+ */
+export async function archiveInboxItem(
+  workspace: string,
+  filename: string,
+  status: Exclude<InboxStatus, "pending">
+): Promise<void> {
+  const inPath = await join(workspace, ".memoryos", "inbox", filename);
+  if (!(await exists(inPath))) return; // 幂等：已处理过
+  let item: InboxItem;
+  try {
+    item = JSON.parse(await readTextFile(inPath)) as InboxItem;
+  } catch {
+    // 坏 JSON：直接删掉避免卡住
+    await removeFile(inPath);
+    return;
+  }
+  item.status = status;
+  const arch = await archiveDir(workspace);
+  const tmpPath = await join(arch, `.${filename}.tmp`);
+  const finalPath = await join(arch, filename);
+  await writeTextFile(tmpPath, JSON.stringify(item, null, 2));
+  await renameFile(tmpPath, finalPath);
+  await removeFile(inPath);
 }

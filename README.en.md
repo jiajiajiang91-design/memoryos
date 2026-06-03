@@ -8,6 +8,8 @@
 
 MemoryOS is a local-first desktop app that gives you continuous working memory across ChatGPT, Claude, Gemini, Cursor, and others. Your context lives as plain Markdown files on your own machine — nothing uploaded, no account, no cloud.
 
+> **New in v0.2**: AI can now **connect directly** to your memory via MCP. Install the extension in Claude Desktop and it reads your project context and writes session handoffs back into the MemoryOS Inbox for your review — no more manual copy-paste.
+
 ![MemoryOS welcome — working memory across AIs](./docs/screenshots/en/01_welcome.png)
 
 ---
@@ -46,6 +48,22 @@ Next time, any AI picks up from the handoff in 30 seconds. Outdated decisions ge
 
 ---
 
+## Connect an AI: direct read & write (new in v0.2)
+
+Beyond copy-paste, v0.2 lets an AI connect to your memory directly via **MCP**. In Claude Desktop: go to Settings → Extensions, install `memoryos.mcpb`, and point it at your workspace path. Claude then gets three tools — **list projects / read project memory / stage a handoff**.
+
+![Enable the MemoryOS extension in Claude Desktop — Enabled + workspace path + three tools](./docs/screenshots/en/05_connect_claude.png)
+
+In a new chat, just ask Claude to "read my project memory" and it picks up your context; when you're done, ask it to "stage this session's handoff."
+
+![Claude calling MemoryOS to read project memory directly](./docs/screenshots/en/06_mcp_call.png)
+
+> **Key red line**: what the AI writes back does **not** go straight into formal memory — it lands in the MemoryOS **Inbox** for you to confirm item by item. You're always the last gate.
+
+> Web ChatGPT / Gemini can't reach a local MCP server yet (browser sandbox); keep using copy-paste for those — it all lands in the same Inbox.
+
+---
+
 ## What "Copy end prompt" does
 
 Click the button — MemoryOS bundles your selected context files + a standardized end-session prompt into your clipboard. Pick which AI you're in (ChatGPT / Claude / Gemini / Grok / Cursor / Codex / DeepSeek / Kimi, or a custom name), paste, and the AI outputs a Markdown handoff in the fixed schema.
@@ -57,7 +75,7 @@ Click the button — MemoryOS bundles your selected context files + a standardiz
 ## Principles
 
 1. **Local-first** — every file is yours, plain Markdown
-2. **AI proposes, you confirm** — nothing writes to disk without your checkbox
+2. **AI proposes, you confirm** — nothing writes to disk without your checkbox; the same holds for MCP write-backs, which land in the Inbox for review before they're saved
 3. **Memory stays current** — AI marks what's outdated, you confirm, stale decisions retire — the next AI always gets up-to-date context
 4. **No conversation scraping** — handoffs are user-pasted, never auto-read
 5. **Risk-tiered import** — sessions are low-risk, project context medium, About-Me high (default off + warning)
@@ -75,6 +93,8 @@ Click the button — MemoryOS bundles your selected context files + a standardiz
 - 🎯 **Risk-tiered import** — AI's suggested updates are grouped by risk; you pick what saves
 - ✏️ **In-app file editing** — core files (About Me / Context / Decisions) can be edited and saved directly in the viewer modal
 - 🔄 **Superseded merge** — AI marks what's outdated in each handoff; Review page shows old (strikethrough) vs new (highlighted); confirm to retire stale content
+- 🔌 **Connect an AI (MCP)** — clients like Claude Desktop read your memory and stage handoffs directly, no copy-paste
+- 📥 **Memory Inbox** — AI write-backs land in a pending Inbox first; nothing enters formal memory until you confirm
 - 💬 **One-click feedback** — write a note, one click copies to clipboard and opens GitHub Issues
 
 ![Help drawer — four steps, one complete loop](./docs/screenshots/en/04_help.png)
@@ -142,9 +162,10 @@ Windows installer is ~**1.7 MB**.
 
 - [x] v0.1.0 — Core loop, project management, bootstrap, Windows installer
 - [x] v0.1.1 — Bilingual UI / system-trash delete + Undo / UX polish
-- [x] **v0.1.2 — Fault-tolerant parser / Superseded memory merge / in-app file editing / feedback channel** (current)
-- [ ] v0.2 — Cross-AI output consistency validation + seed-user interviews
-- [ ] v0.3 — Mac / Linux builds, code-signing
+- [x] v0.1.2 — Fault-tolerant parser / Superseded memory merge / in-app file editing / feedback channel
+- [x] **v0.2.0 — Connect an AI (MCP) / Memory Inbox + Review / one-click Claude Desktop extension** (current)
+- [ ] v0.3 — More AI-client connections / browser-extension exploration / seed-user interviews
+- [ ] v0.4 — Mac / Linux builds, code-signing
 - [ ] v1.0 — Full Markdown editor + community
 
 ---

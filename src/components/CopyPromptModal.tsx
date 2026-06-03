@@ -9,15 +9,18 @@ import { useT, useLang } from "../lib/i18n";
 type Props = {
   workspace: string;
   project: Project;
+  /** 复制开始时默认选中的来源工具（来自上次选择）。 */
+  defaultSourceTool?: SourceTool;
   onClose: () => void;
-  onCopied: () => void;
+  /** 复制完成后回传选中的来源工具，App 记为 lastSourceClient 供导入 Inbox 时带入。 */
+  onCopied: (sourceClient: SourceTool) => void;
 };
 
-export default function CopyPromptModal({ workspace, project, onClose, onCopied }: Props) {
+export default function CopyPromptModal({ workspace, project, defaultSourceTool, onClose, onCopied }: Props) {
   const tt = useT();
   const [lang] = useLang();
-  const [files, setFiles] = useState({ context: true, decisions: true, session: true, aboutMe: false });
-  const [tool, setTool] = useState<SourceTool>("Claude");
+  const [files, setFiles] = useState({ context: true, decisions: true, session: true });
+  const [tool, setTool] = useState<SourceTool>(defaultSourceTool || "Claude");
   const [customName, setCustomName] = useState("");
   const [customOpen, setCustomOpen] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
@@ -29,9 +32,10 @@ export default function CopyPromptModal({ workspace, project, onClose, onCopied 
         context: files.context ? project.contextMarkdown : "",
         decisions: files.decisions ? project.decisionsMarkdown : "",
         latestSession: (files.session && project.sessions[0]?.rawMarkdown) || "",
+        sourceTool: tool,
         lang,
       }),
-    [files, project, lang]
+    [files, project, tool, lang]
   );
 
   const tokenEstimate = Math.round(preview.length / 2.5);
@@ -43,10 +47,11 @@ export default function CopyPromptModal({ workspace, project, onClose, onCopied 
       context: files.context ? ctx.context : "",
       decisions: files.decisions ? ctx.decisions : "",
       latestSession: files.session ? ctx.latestSession : "",
+      sourceTool: tool,
       lang,
     });
     await copyToClipboard(text);
-    onCopied();
+    onCopied(tool);
   };
 
   const isCustomActive =
@@ -84,12 +89,6 @@ export default function CopyPromptModal({ workspace, project, onClose, onCopied 
           size={project.sessions[0]?.date || "—"}
           checked={files.session && project.sessions.length > 0}
           onChange={(v) => setFiles({ ...files, session: v })}
-        />
-        <FileToggle
-          name={tt("copyPrompt.fileAboutMe")}
-          size={tt("copyPrompt.globalTag")}
-          checked={files.aboutMe}
-          onChange={(v) => setFiles({ ...files, aboutMe: v })}
         />
 
         <div className="text-[13px] text-ink-soft mb-2.5 mt-6">{tt("copyPrompt.sourceToolLabel")}</div>

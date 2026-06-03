@@ -1,12 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Check, AlertTriangle, FileText } from "lucide-react";
-import type { Project, ParsedHandoff, UpdateSuggestion } from "../types";
+import type { ParsedHandoff, UpdateSuggestion } from "../types";
 import { useT } from "../lib/i18n";
 import { extractSuperseded } from "../lib/parser";
 import { logEvent, editPercent } from "../lib/telemetry";
 
 type Props = {
-  project: Project;
+  /** 目标项目名（这条 handoff 会写入的项目）。来自 Inbox item 的 slug 对应项目，已锚定，不随当前显示项目漂移。 */
+  projectName: string;
   raw: string;
   parsed: ParsedHandoff;
   currentContext: string;
@@ -14,6 +15,10 @@ type Props = {
   currentAboutMe: string;
   onCancel: () => void;
   onSave: (suggestions: UpdateSuggestion[]) => void;
+  /** 来自 Inbox 的 review 才有：丢弃 = 移 archive(discarded)。取消（onCancel）则保留 pending。 */
+  onDiscard?: () => void;
+  /** 这条 handoff 的来源通道（manual/mcp/browser），带进 review 埋点。 */
+  channel?: string;
 };
 
 const RISK_LABEL_COLOR: Record<UpdateSuggestion["riskLevel"], string> = {
@@ -22,7 +27,7 @@ const RISK_LABEL_COLOR: Record<UpdateSuggestion["riskLevel"], string> = {
   high: "text-warn",
 };
 
-export default function ReviewPage({ project, raw, parsed, currentContext, currentDecisions, currentAboutMe, onCancel, onSave }: Props) {
+export default function ReviewPage({ projectName, raw, parsed, currentContext, currentDecisions, currentAboutMe, onCancel, onSave, onDiscard, channel = "manual" }: Props) {
   const t = useT();
   const [suggestions, setSuggestions] = useState<UpdateSuggestion[]>(() =>
     buildSuggestions(parsed, currentContext, currentDecisions, currentAboutMe)
@@ -33,6 +38,7 @@ export default function ReviewPage({ project, raw, parsed, currentContext, curre
 
   useEffect(() => {
     logEvent("review.shown", {
+      channel,
       rawLength: raw.length,
       suggestions: suggestions.map((s) => ({
         id: s.id,
@@ -51,6 +57,7 @@ export default function ReviewPage({ project, raw, parsed, currentContext, curre
 
   const handleConfirm = () => {
     logEvent("review.confirmed", {
+      channel,
       selectedIds: suggestions.filter((s) => s.selected).map((s) => s.id),
       edits: suggestions
         .filter((s) => s.id !== "save-session")
@@ -68,9 +75,18 @@ export default function ReviewPage({ project, raw, parsed, currentContext, curre
 
   const handleCancel = () => {
     logEvent("review.cancelled", {
+      channel,
       suggestionCount: suggestions.length,
     });
     onCancel();
+  };
+
+  const handleDiscard = () => {
+    logEvent("review.discarded", {
+      channel,
+      suggestionCount: suggestions.length,
+    });
+    onDiscard?.();
   };
 
   const currentFileContent: Record<string, string> = {
@@ -109,7 +125,7 @@ export default function ReviewPage({ project, raw, parsed, currentContext, curre
       <div className="flex-1 overflow-y-auto">
         <div className="pl-16 pr-12 pt-12 pb-12 max-w-[832px]">
           <div className="text-xs text-ink-soft mb-6">
-            {t("sidebar.projects")} <span className="text-ink-faint mx-1.5">/</span>{project.name}
+            {t("sidebar.projects")} <span className="text-ink-faint mx-1.5">/</span>{projectName}
             <span className="text-ink-faint mx-1.5">/</span>
             <span className="text-ink">{t("review.breadcrumb")}</span>
           </div>
@@ -174,8 +190,13 @@ export default function ReviewPage({ project, raw, parsed, currentContext, curre
           {t("review.selectedCount", { selected: selectedCount, total: suggestions.length })}
         </span>
         <div className="flex gap-3">
+          {onDiscard && (
+            <button onClick={handleDiscard} className="h-9 px-3 rounded-md border border-hairline text-[13px] font-medium text-warn hover:bg-warn/[.06] bg-surface transition-colors">
+              {t("review.discardBtn")}
+            </button>
+          )}
           <button onClick={handleCancel} className="h-9 px-3 rounded-md border border-hairline text-[13px] font-medium hover:bg-paper bg-surface transition-colors">
-            {t("common.cancel")}
+            {onDiscard ? t("review.keepPendingBtn") : t("common.cancel")}
           </button>
           <button onClick={handleConfirm} className="h-9 px-3 rounded-md bg-slate text-white text-[13px] font-medium hover:opacity-90 transition-opacity">
             {t("review.saveBtn")}

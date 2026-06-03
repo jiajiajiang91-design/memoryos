@@ -1,5 +1,5 @@
 import { useRef } from "react";
-import { Copy, Plus, Play, Sparkles, ChevronRight } from "lucide-react";
+import { Copy, Plus, Play, Sparkles, ChevronRight, Inbox } from "lucide-react";
 import type { Project } from "../types";
 import MetadataPanel from "./MetadataPanel";
 import HelpBanner from "./HelpBanner";
@@ -18,6 +18,10 @@ type Props = {
   onOpenSessionsDir: () => void;
   bootstrapNeeds: { needsAboutMe: boolean; needsContext: boolean };
   onOpenBootstrap: () => void;
+  /** Inbox 里 status=pending 的条数；>0 时显示「待审」入口。 */
+  pendingInboxCount: number;
+  /** 点「待审」打开最早一条 pending 的 review。 */
+  onReviewPending: () => void;
 };
 
 export default function Dashboard(props: Props) {
@@ -83,9 +87,19 @@ export default function Dashboard(props: Props) {
                 <Copy size={16} strokeWidth={1.5} />
                 {t("dashboard.copyEndPrompt")}
               </button>
+              {props.pendingInboxCount > 0 && (
+                <button
+                  onClick={props.onReviewPending}
+                  className="ml-auto h-10 px-3 rounded-md bg-[#FFF5E1] border border-[#EAD9A8] text-[#A37A1C] font-medium text-sm inline-flex items-center gap-2 hover:bg-[#FFEFD0] transition-colors"
+                  title={t("dashboard.pendingBadgeHint", { n: props.pendingInboxCount })}
+                >
+                  <Inbox size={16} strokeWidth={1.5} />
+                  {t("dashboard.reviewPending", { n: props.pendingInboxCount })}
+                </button>
+              )}
               <button
                 onClick={props.onImport}
-                className="ml-auto h-10 px-4 rounded-md bg-slate text-white font-medium text-sm inline-flex items-center gap-2 hover:opacity-90 transition-opacity"
+                className={`${props.pendingInboxCount > 0 ? "" : "ml-auto "}h-10 px-4 rounded-md bg-slate text-white font-medium text-sm inline-flex items-center gap-2 hover:opacity-90 transition-opacity`}
                 title={t("dashboard.importHandoffHint")}
               >
                 <Plus size={16} strokeWidth={1.5} />

@@ -21,10 +21,17 @@ import {
   writeProjectContext,
   writeProjectDecisions,
   readAboutMe,
+  writeInboxItem,
+  countPendingInbox,
+  listInboxItems,
+  archiveInboxItem,
+  readMcpState,
 } from "./lib/fs";
 import { ask } from "@tauri-apps/api/dialog";
 import { buildStartSessionPrompt } from "./lib/parser";
-import type { Project, ProjectMeta, ParsedHandoff, UpdateSuggestion } from "./types";
+import { parsedToInboxHandoff, inboxItemToReviewState } from "./lib/inbox";
+import { logEvent } from "./lib/telemetry";
+import type { Project, ProjectMeta, ParsedHandoff, UpdateSuggestion, InboxItem, McpState } from "./types";
 import Sidebar from "./components/Sidebar";
 import Dashboard from "./components/Dashboard";
 import HelpDrawer from "./components/HelpDrawer";
@@ -39,7 +46,21 @@ import RenameProjectModal from "./components/RenameProjectModal";
 import LanguageToggle from "./components/LanguageToggle";
 import { useT, useLang } from "./lib/i18n";
 
-type ReviewState = { raw: string; parsed: ParsedHandoff; aboutMe: string } | null;
+// inboxFilename 存在 = 这次 review 来自某个 Inbox item，保存=applied/丢弃=discarded（移 archive）；
+// 取消则保留 pending，不动 inbox 文件。
+// review 锚定到 Inbox item 自己的目标项目（slug + 该项目的 context/decisions 快照），
+// 与当前显示的项目解耦——避免点错项目时把记忆写进别的项目（mis-filing）。
+type ReviewState = {
+  raw: string;
+  parsed: ParsedHandoff;
+  aboutMe: string;
+  inboxFilename?: string;
+  channel?: string;
+  slug: string;          // 目标项目 slug（= item.slug），保存只写这里
+  projectName: string;   // 目标项目名（review 抬头显示）
+  context: string;       // 目标项目 00_context 快照（supersede 合并基线）
+  decisions: string;     // 目标项目 decisions 快照
+} | null;
 
 // 把路径 "C:\Users\xxx\Documents\MemoryOS" 转成 "Documents / MemoryOS"
 function friendlyLocation(path: string): string {
@@ -61,6 +82,14 @@ export default function App() {
     () => localStorage.getItem("memoryos.bannerDismissed") === "1"
   );
   const [toast, setToast] = useState<string | null>(null);
+  // 上次在 CopyPromptModal 选的来源工具 — 复制结束指令后记下，导入 Inbox 时作为 sourceClient 默认带入（Phase 0 接通，Phase 1 消费）。
+  const [lastSourceClient, setLastSourceClient] = useState<string>(
+    () => localStorage.getItem("memoryos.lastSourceClient") || "Claude"
+  );
+  const rememberSourceClient = (client: string) => {
+    setLastSourceClient(client);
+    localStorage.setItem("memoryos.lastSourceClient", client);
+  };
 
   const dismissBanner = () => {
     setBannerDismissed(true);
@@ -68,6 +97,16 @@ export default function App() {
   };
   const [review, setReview] = useState<ReviewState>(null);
   const [refreshKey, setRefreshKey] = useState(0);
+  // Inbox 待审计数（badge 只数 status=pending）+ MCP 连接状态（最近一次工具活动）。
+  const [pendingCount, setPendingCount] = useState(0);
+  const [mcpState, setMcpState] = useState<McpState | null>(null);
+  const refreshPending = async () => {
+    if (!workspace) { setPendingCount(0); setMcpState(null); return; }
+    try { setPendingCount(await countPendingInbox(workspace)); }
+    catch (e) { console.warn("countPendingInbox failed", e); }
+    try { setMcpState(await readMcpState(workspace)); }
+    catch (e) { console.warn("readMcpState failed", e); }
+  };
 
   // Restore last workspace on launch
   useEffect(() => {
@@ -197,6 +236,15 @@ export default function App() {
     }
   }, [setupOpen, setupPath]);
 
+  // Inbox pending 计数：workspace/刷新时扫一遍 + app 重新聚焦时扫（PRD §7：0-1 用 focus 扫 inbox/）。
+  useEffect(() => {
+    refreshPending();
+    const onFocus = () => refreshPending();
+    window.addEventListener("focus", onFocus);
+    return () => window.removeEventListener("focus", onFocus);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [workspace, refreshKey]);
+
   // Load project list when workspace 或语言切换
   useEffect(() => {
     if (!workspace) return;
@@ -226,34 +274,107 @@ export default function App() {
     setTimeout(() => setToast(null), 3000);
   };
 
+  // 手动导入（通道 manual）：parseHandoff → parsedToInboxHandoff → 写 Inbox（pending）→ 立即打开该 item 的 Review。
+  // 红线：任何通道写回的 handoff 一律先进 Inbox，必须 review 后才入库。
   const onParsed = async (raw: string, parsed: ParsedHandoff) => {
+    if (!workspace || !currentSlug) return;
     setModal(null);
-    const aboutMe = workspace ? await readAboutMe(workspace) : "";
-    setReview({ raw, parsed, aboutMe });
+    const handoff = parsedToInboxHandoff(parsed);
+    const item: InboxItem = {
+      id: crypto.randomUUID(),
+      slug: currentSlug,
+      sourceChannel: "manual",
+      // sourceClient：优先用 handoff Metadata 里实际的 Source Tool（Phase 0 已把 CopyPromptModal 选择预填进去），
+      // 回退到上次复制结束指令时选的 lastSourceClient。
+      sourceClient: parsed.metadata?.["Source Tool"]?.trim() || lastSourceClient,
+      sourcePlatform: null,
+      createdAt: new Date().toISOString(),
+      handoff,
+      status: "pending",
+    };
+    const filename = await writeInboxItem(workspace, item);
+    // push_to_inbox 埋点（北极星 push_to_inbox_rate 的分母），带 channel（与 server 端对齐）。
+    logEvent("push_to_inbox", { channel: "manual", sourceClient: item.sourceClient, slug: item.slug });
+    await refreshPending();
+    void raw; // 原始粘贴文本不再直接用——apply 时由 inboxHandoffToMarkdown 渲染标准 9 段
+    await openInboxReview(filename, item);
+  };
+
+  // 打开某个 Inbox item 的 Review（手动导入后立即调，或点「待审」badge 调）。
+  // 关键：review 锚定到 item.slug 对应的**目标项目**，并加载该项目的 context/decisions 作为合并基线，
+  // 不依赖当前显示的 project（后者随 currentSlug 异步加载，会滞后→导致写错项目）。
+  const openInboxReview = async (filename: string, item: InboxItem) => {
+    if (!workspace) return;
+    if (item.slug !== currentSlug) setCurrentSlug(item.slug); // 仅为导航到目标项目，保存不依赖它
+    const aboutMe = await readAboutMe(workspace);
+    let targetName = item.slug;
+    let context = "";
+    let decisions = "";
+    try {
+      const target = await readProject(workspace, item.slug);
+      targetName = target.name;
+      context = target.contextMarkdown;
+      decisions = target.decisionsMarkdown;
+    } catch (e) {
+      console.warn("readProject for inbox item failed", item.slug, e);
+    }
+    const { raw: mdRaw, parsed } = inboxItemToReviewState(item);
+    setReview({
+      raw: mdRaw, parsed, aboutMe, inboxFilename: filename, channel: item.sourceChannel,
+      slug: item.slug, projectName: targetName, context, decisions,
+    });
+  };
+
+  // 点 Dashboard「待审」：打开最早一条 pending 的 Review。
+  const onReviewPending = async () => {
+    if (!workspace) return;
+    const pending = await listInboxItems(workspace, "pending");
+    if (!pending.length) { await refreshPending(); return; }
+    const next = pending[pending.length - 1]; // listInboxItems 新的在前，取最早一条
+    await openInboxReview(next.filename, next.item);
   };
 
   const onReviewSave = async (suggestions: UpdateSuggestion[]) => {
-    if (!workspace || !project || !review) return;
+    if (!workspace || !review) return;
+    const slug = review.slug; // 锚定目标项目，绝不用滞后的 currentSlug/project
     let saved = 0;
     for (const s of suggestions.filter((x) => x.selected)) {
       if (s.id === "save-session") {
-        await saveSession(workspace, project.slug, review.raw);
+        await saveSession(workspace, slug, review.raw);
         saved++;
       } else if (s.targetFile && s.content) {
         if (s.mode === "replace") {
-          if (s.targetFile === "00_context.md") await writeProjectContext(workspace, project.slug, s.content);
-          else if (s.targetFile === "decisions.md") await writeProjectDecisions(workspace, project.slug, s.content);
+          if (s.targetFile === "00_context.md") await writeProjectContext(workspace, slug, s.content);
+          else if (s.targetFile === "decisions.md") await writeProjectDecisions(workspace, slug, s.content);
           else if (s.targetFile === "about_me.md") await writeAboutMe(workspace, s.content);
-          else await appendToFile(workspace, project.slug, s.targetFile, s.content);
+          else await appendToFile(workspace, slug, s.targetFile, s.content);
         } else {
-          await appendToFile(workspace, project.slug, s.targetFile, s.content);
+          await appendToFile(workspace, slug, s.targetFile, s.content);
         }
         saved++;
       }
     }
+    // 入库成功 → 把对应 Inbox item 标 applied 并移 archive（幂等）。
+    if (review.inboxFilename) await archiveInboxItem(workspace, review.inboxFilename, "applied");
     setReview(null);
+    await refreshPending();
     setRefreshKey((k) => k + 1);
     showToast(t("toast.sessionSaved", { n: saved }));
+  };
+
+  // 取消 = 保留 pending（不动 inbox 文件），用户可稍后从「待审」继续。
+  const onReviewCancel = async () => {
+    setReview(null);
+    await refreshPending();
+  };
+
+  // 丢弃 = 移 archive(discarded)，不静默丢、不入库。
+  const onReviewDiscard = async () => {
+    if (workspace && review?.inboxFilename) {
+      await archiveInboxItem(workspace, review.inboxFilename, "discarded");
+    }
+    setReview(null);
+    await refreshPending();
   };
 
   // ── Welcome / 空工作区 ─────────────────────────────
@@ -405,6 +526,7 @@ export default function App() {
         projects={projects}
         currentSlug={currentSlug}
         sessionsCount={project?.sessions.length ?? 0}
+        mcpState={mcpState}
         onSelectProject={(slug) => { setCurrentSlug(slug); setReview(null); }}
         onNewProject={() => setNewProjectOpen(true)}
         onRefreshProjects={() => {
@@ -457,16 +579,18 @@ export default function App() {
         }}
       />
 
-      {review && project ? (
+      {review ? (
         <ReviewPage
-          project={project}
+          projectName={review.projectName}
           raw={review.raw}
           parsed={review.parsed}
-          currentContext={project.contextMarkdown}
-          currentDecisions={project.decisionsMarkdown}
+          currentContext={review.context}
+          currentDecisions={review.decisions}
           currentAboutMe={review.aboutMe}
-          onCancel={() => setReview(null)}
+          onCancel={onReviewCancel}
           onSave={onReviewSave}
+          onDiscard={review.inboxFilename ? onReviewDiscard : undefined}
+          channel={review.channel}
         />
       ) : project ? (
         <Dashboard
@@ -488,6 +612,8 @@ export default function App() {
           onCopyPrompt={() => setModal("copy")}
           onImport={() => setModal("import")}
           onOpenSession={setViewingSession}
+          pendingInboxCount={pendingCount}
+          onReviewPending={onReviewPending}
           bootstrapNeeds={bootstrapNeeds}
           onOpenBootstrap={() => setBootstrapOpen(true)}
           onOpenSessionsDir={async () => {
@@ -508,8 +634,10 @@ export default function App() {
         <CopyPromptModal
           workspace={workspace}
           project={project}
+          defaultSourceTool={lastSourceClient}
           onClose={() => setModal(null)}
-          onCopied={() => {
+          onCopied={(client) => {
+            rememberSourceClient(client);
             setModal(null);
             showToast(t("toast.endPromptCopied"));
           }}
@@ -616,6 +744,8 @@ export default function App() {
       <HelpDrawer
         open={drawerOpen}
         onClose={() => setDrawerOpen(false)}
+        workspace={workspace}
+        projectName={project?.name}
         onTryCopy={() => {
           setDrawerOpen(false);
           setTimeout(() => setModal("copy"), 240);

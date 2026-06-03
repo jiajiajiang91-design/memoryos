@@ -1,5 +1,25 @@
 # Changelog
 
+## v0.2.0 — 2026-06-03
+
+### 新增 — 连接 AI（MCP）
+
+- **MemoryOS MCP server**：支持 AI 客户端通过 MCP 直接连接本地记忆，提供三个工具——`list_projects`（列出项目）/ `get_project_memory`（读取项目记忆：about_me + 项目说明 + 决策 + 最新 Compact Context）/ `save_session_handoff`（暂存对话总结）。server 为自包含 bundle，运行不依赖联网
+- **Claude Desktop 一键扩展**：打包 `memoryos.mcpb`，在 Claude Desktop → Extensions 里安装即用；安装时填入工作区路径，注入为 `MEMORYOS_WORKSPACE`，AI 只读这个文件夹
+- **使用帮助新增「AI 连接教程」分栏**：Claude Desktop 推荐 `.mcpb` 教程 / 其他 MCP stdio 客户端高级手动配置 / 网页端标 Planned；含安装 → 启用 → 重启 → 测试读取 → 暂存 handoff → 回 App Review 的完整六步
+- **侧栏连接状态**：显示最近连接的 AI 客户端与活动
+
+### 新增 — 记忆收件箱（Inbox）
+
+- **Inbox + Review 入库**：AI 通过 MCP 写回的总结、以及手动导入的 handoff，都先进「待审收件箱」，不直接写正式记忆；Dashboard 出现「待审」提示，逐条确认 / 编辑 / 丢弃后才入库——保留「用户是最后一道关」红线
+- **Review 锚定目标项目**：保存只写入该待审条目自己的目标项目，杜绝点错项目时的 mis-filing
+
+### 改
+
+- 安装包版本号统一升至 0.2.0（app）；MCP server 独立版本线 0.3.0
+
+---
+
 ## v0.1.2 — 2026-05-27
 
 ### 新增 — 记忆现时性

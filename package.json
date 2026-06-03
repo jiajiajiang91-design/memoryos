@@ -1,11 +1,14 @@
 {
   "name": "memoryos",
   "private": true,
-  "version": "0.1.2",
+  "version": "0.2.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
+    "build:server": "npm --prefix server run build",
+    "build:mcpb": "node scripts/build-mcpb.mjs",
+    "build:tauri": "npm run build && npm run build:mcpb",
     "preview": "vite preview",
     "tauri": "tauri"
   },

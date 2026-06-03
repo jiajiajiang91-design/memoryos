@@ -3,7 +3,7 @@
 // Prompt builders accept lang for zh/en switching.
 
 import type { ParsedHandoff } from "../types";
-import type { Lang } from "./i18n";
+import type { Lang } from "./lang";
 
 function extract(text: string, heading: string): string {
   const escaped = heading.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -465,9 +465,15 @@ export function buildEndSessionPrompt(opts: {
   context: string;
   decisions: string;
   latestSession: string;
+  /** 用户在 CopyPromptModal 选的来源工具，预填进 handoff 的 Metadata。 */
+  sourceTool?: string;
   lang?: Lang;
 }): string {
   const lang: Lang = opts.lang ?? "zh";
+  // 把选中的来源工具预填进 Metadata，避免选择被丢弃（Phase 0：sourceTool → sourceClient 接通）。
+  const sourceToolLine = opts.sourceTool?.trim()
+    ? `- Source Tool: ${opts.sourceTool.trim()}`
+    : `- Source Tool:`;
 
   if (lang === "en") {
     return `Based on our conversation, generate a MemoryOS Session Handoff.
@@ -492,7 +498,7 @@ Rules:
 
 ## Metadata
 - Date:
-- Source Tool:
+${sourceToolLine}
 - Project: ${opts.projectName}
 - Session Goal:
 
@@ -564,7 +570,7 @@ ${opts.latestSession}
 
 ## Metadata
 - Date:
-- Source Tool:
+${sourceToolLine}
 - Project: ${opts.projectName}
 - Session Goal:
 

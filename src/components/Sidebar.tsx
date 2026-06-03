@@ -2,7 +2,7 @@ import { Home, Settings, HelpCircle, Plus, FileText, FolderOpen, RotateCw, Messa
 import { open as shellOpen } from "@tauri-apps/api/shell";
 import { createDir, exists } from "@tauri-apps/api/fs";
 import { join } from "@tauri-apps/api/path";
-import type { ProjectMeta } from "../types";
+import type { ProjectMeta, McpState } from "../types";
 import ProjectKebabMenu from "./ProjectKebabMenu";
 import LanguageToggle from "./LanguageToggle";
 import { useT } from "../lib/i18n";
@@ -22,14 +22,28 @@ type Props = {
   onToast: (msg: string) => void;
   onSwitchWorkspace: () => void;
   onViewCoreFile: (file: "about_me.md" | "00_context.md" | "decisions.md") => void;
+  /** 最近一次 MCP 工具活动（来自 .memoryos/mcp_state.json）；null = 还没检测到。 */
+  mcpState?: McpState | null;
 };
+
+// 相对时间，复用 common.* i18n key。
+function relTime(iso: string, t: (k: string, v?: Record<string, string | number>) => string): string {
+  const ms = Date.now() - new Date(iso).getTime();
+  if (!isFinite(ms) || ms < 0) return t("common.justNow");
+  const min = Math.floor(ms / 60000);
+  if (min < 1) return t("common.justNow");
+  if (min < 60) return t("common.minutesAgo", { n: min });
+  const hr = Math.floor(min / 60);
+  if (hr < 24) return t("common.hoursAgo", { n: hr });
+  return t("common.daysAgo", { n: Math.floor(hr / 24) });
+}
 
 export default function Sidebar(props: Props) {
   const t = useT();
   const {
     workspace, projects, currentSlug, sessionsCount,
     onOpenHelp, onOpenFeedback, onSelectProject, onNewProject, onRefreshProjects, onToast,
-    onSwitchWorkspace, onViewCoreFile, onRenameProject, onDeleteProject,
+    onSwitchWorkspace, onViewCoreFile, onRenameProject, onDeleteProject, mcpState,
   } = props;
 
   const openInOS = async (path: string) => {
@@ -117,12 +131,31 @@ export default function Sidebar(props: Props) {
         <Row icon={FolderOpen} label={t("sidebar.sessionsCount", { n: sessionsCount })} disabled={!hasProject} onClick={openSessionsDir} />
       </div>
 
-      <div className="h-10 px-4 flex items-center justify-between text-xs text-ink-soft border-t border-hairline shrink-0">
-        <span className="inline-flex items-center gap-2">
-          <span className="w-1.5 h-1.5 rounded-full bg-ok inline-block" />
-          {t("sidebar.localMode")}
-        </span>
-        <LanguageToggle />
+      <div className="border-t border-hairline shrink-0">
+        {/* MCP 连接状态：最近一次工具活动（server↔app 通过 mcp_state.json 通信，非实时 socket）。 */}
+        <div className="px-4 pt-2 pb-1.5 text-[11px]">
+          {mcpState ? (
+            <span
+              className="inline-flex items-center gap-2 text-ink-soft"
+              title={t("sidebar.mcpTooltip", { client: mcpState.lastClient, tool: mcpState.lastTool, time: relTime(mcpState.lastActivityAt, t) })}
+            >
+              <span className="w-1.5 h-1.5 rounded-full bg-ok inline-block" />
+              {t("sidebar.mcpActive", { client: mcpState.lastClient, time: relTime(mcpState.lastActivityAt, t) })}
+            </span>
+          ) : (
+            <span className="inline-flex items-center gap-2 text-ink-faint">
+              <span className="w-1.5 h-1.5 rounded-full bg-ink-faint/40 inline-block" />
+              {t("sidebar.mcpIdle")}
+            </span>
+          )}
+        </div>
+        <div className="h-9 px-4 flex items-center justify-between text-xs text-ink-soft">
+          <span className="inline-flex items-center gap-2">
+            <span className="w-1.5 h-1.5 rounded-full bg-ok inline-block" />
+            {t("sidebar.localMode")}
+          </span>
+          <LanguageToggle />
+        </div>
       </div>
     </aside>
   );

@@ -8,8 +8,10 @@
 
 import { createContext, useContext, useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
+import type { Lang } from "./lang";
 
-export type Lang = "zh" | "en";
+// Lang 的定义已移到 React-free 的 ./lang，供 Node server 复用；这里 re-export 保持既有 import 路径。
+export type { Lang };
 
 const LANG_KEY = "memoryos.lang";
 
@@ -76,6 +78,12 @@ const DICT: Record<string, Entry> = {
   "sidebar.decisions": { zh: "决策记录", en: "Decisions" },
   "sidebar.sessionsCount": { zh: "对话历史 ({n})", en: "Sessions ({n})" },
   "sidebar.localMode": { zh: "本地模式", en: "Local mode" },
+  "sidebar.mcpActive": { zh: "MCP · {client} · {time}", en: "MCP · {client} · {time}" },
+  "sidebar.mcpIdle": { zh: "MCP 未连接", en: "MCP not connected" },
+  "sidebar.mcpTooltip": {
+    zh: "最近一次 MCP 活动：{client} 调用 {tool}（{time}）",
+    en: "Last MCP activity: {client} called {tool} ({time})",
+  },
   "sidebar.feedback": { zh: "反馈 / 报 Bug", en: "Feedback / Report bug" },
 
   // ── FeedbackModal ────────────────────────────
@@ -150,6 +158,11 @@ const DICT: Record<string, Entry> = {
     zh: "粘贴 AI 输出的对话总结，更新决策和项目说明",
     en: "Paste the AI's handoff to update decisions and context",
   },
+  "dashboard.pendingBadgeHint": {
+    zh: "{n} 条待审记忆在收件箱里，点开继续 review",
+    en: "{n} pending memory item(s) in the inbox — click to review",
+  },
+  "dashboard.reviewPending": { zh: "{n} 条待审", en: "{n} pending" },
   "dashboard.noSessions": { zh: "还没有对话记录", en: "No sessions yet" },
   "dashboard.noSessionsHint": {
     zh: "点上方按钮生成第一份对话总结。",
@@ -234,8 +247,6 @@ const DICT: Record<string, Entry> = {
   "copyPrompt.fileContext": { zh: "项目说明", en: "Project Context" },
   "copyPrompt.fileDecisions": { zh: "决策记录", en: "Decisions" },
   "copyPrompt.fileLatestSession": { zh: "最近一次对话", en: "Latest session" },
-  "copyPrompt.fileAboutMe": { zh: "关于我", en: "About Me" },
-  "copyPrompt.globalTag": { zh: "(全局)", en: "(global)" },
   "copyPrompt.sourceToolLabel": { zh: "在哪个 AI 里用", en: "Which AI" },
   "copyPrompt.customPlaceholder": { zh: "例如:通义、Manus", en: "e.g. Manus, Qwen" },
   "copyPrompt.customBtn": { zh: "自定义", en: "Custom" },
@@ -298,6 +309,8 @@ const DICT: Record<string, Entry> = {
   "review.hideCurrentFile": { zh: "▾ 收起当前内容", en: "▾ Hide current content" },
   "review.selectedCount": { zh: "已勾选 {selected} / {total} 项", en: "{selected} of {total} selected" },
   "review.saveBtn": { zh: "保存所选", en: "Save selected" },
+  "review.discardBtn": { zh: "丢弃", en: "Discard" },
+  "review.keepPendingBtn": { zh: "稍后再说", en: "Later" },
   "review.countItems": { zh: "{n} 项", en: "{n} items" },
   "review.countBullets": { zh: "{n} 条", en: "{n} bullets" },
   "review.countChars": { zh: "{n} 字", en: "{n} chars" },
@@ -365,6 +378,133 @@ const DICT: Record<string, Entry> = {
     en: "Yes. They're plain Markdown — any editor works.",
   },
   "help.tryStep2": { zh: "现在试试第 2 步", en: "Try step 2 now" },
+
+  // ── Help drawer · 分栏切换 ───────────────────
+  "help.tab.basics": { zh: "使用入门", en: "Getting started" },
+  "help.tab.manual": { zh: "复制粘贴教程", en: "Copy & paste" },
+  "help.tab.mcp": { zh: "AI 连接教程", en: "Connect AI" },
+  "help.manualIntro": {
+    zh: "适用于任何 AI——包括连不上本地的网页聊天（ChatGPT、Gemini 等）。聊完一轮工作，按下面四步把记忆带回来。",
+    en: "Works with any AI — including web chats that can't connect locally (ChatGPT, Gemini, etc). After a round of work, follow these four steps to bring the memory back.",
+  },
+
+  // ── Help drawer · AI 连接教程（Phase 5）───────
+  "mcp.heading": { zh: "把你的 AI 连上 MemoryOS", en: "Connect your AI to MemoryOS" },
+  "mcp.subheading": {
+    zh: "通过 MCP，支持的 AI 可以直接读取你的项目记忆，并把会话总结暂存进 MemoryOS。下面分三种情况：Claude Desktop 一键安装、其他 MCP 客户端手动配置、网页端 AI（暂未支持）。",
+    en: "Through MCP, supported AIs can read your project memory directly and stage session handoffs into MemoryOS. Three cases below: one-click for Claude Desktop, manual config for other MCP clients, and web AIs (not yet supported).",
+  },
+  "mcp.redlineTitle": { zh: "先记住这一条", en: "Read this first" },
+  "mcp.redline": {
+    zh: "AI 写回不会直接修改正式记忆文件。所有 handoff 都会先进入 Inbox，用户确认后才会入库。",
+    en: "AI never writes directly to your formal memory files. Every handoff lands in the Inbox first, and is only saved after you confirm it.",
+  },
+
+  // 块 1：Claude Desktop（推荐）
+  "mcp.s1Title": { zh: "用 Claude Desktop 连接", en: "Connect with Claude Desktop" },
+  "mcp.s1Badge": { zh: "推荐", en: "Recommended" },
+
+  "mcp.step1Title": { zh: "安装 memoryos.mcpb，并填入工作区路径", en: "Install memoryos.mcpb and set your workspace path" },
+  "mcp.step1Desc": {
+    zh: "memoryos.mcpb 已随 MemoryOS 一起提供（在你拿到的安装文件夹里，或 MemoryOS 应用目录内）。打开 Claude Desktop → 设置 → Extensions，选择 memoryos.mcpb 安装。安装时它会让你填 MemoryOS 工作区路径——填你自己电脑上存放记忆的那个文件夹，也就是你现在在 MemoryOS 里用的这个：",
+    en: "memoryos.mcpb ships with MemoryOS (in the install folder you received, or inside the MemoryOS app directory). Open Claude Desktop → Settings → Extensions and install memoryos.mcpb. During install it asks for your MemoryOS workspace path — point it at the memory folder on your own computer, i.e. the one you're using in MemoryOS now:",
+  },
+  "mcp.step1Note": {
+    zh: "这个路径会作为 MEMORYOS_WORKSPACE 注入给 server，Claude 只会读取这个文件夹里的记忆。换电脑或换工作区时，记得改成对应的真实路径。",
+    en: "This path is injected as MEMORYOS_WORKSPACE for the server — Claude only reads memory from this folder. On a different computer or workspace, update it to that real path.",
+  },
+
+  "mcp.step2Title": { zh: "启用扩展，并重启 Claude Desktop", en: "Enable the extension and restart Claude Desktop" },
+  "mcp.step2Desc": {
+    zh: "装好后，确认这个扩展是「已启用 / Enabled」状态——如果显示已禁用 / Disabled，把开关打开。然后完全退出并重启 Claude Desktop（只关窗口不够，要从系统托盘彻底退出），重启后再新开一个对话。",
+    en: "After installing, make sure the extension is Enabled — if it shows Disabled, toggle it on. Then fully quit and restart Claude Desktop (closing the window isn't enough — quit it from the system tray), and start a new conversation afterwards.",
+  },
+  "mcp.step2WsLabel": { zh: "你的工作区路径", en: "Your workspace path" },
+  "mcp.step2WsEmpty": {
+    zh: "（请先在 MemoryOS 里选择一个工作区，这里会显示你自己电脑上的真实路径）",
+    en: "(select a workspace in MemoryOS first — your own computer's real path shows here)",
+  },
+  "mcp.step2Note": {
+    zh: "这一步最容易漏：扩展没启用、没重启、或在重启前的旧对话里测试，都会让工具显示「不可用」。",
+    en: "This is the easiest step to miss: a disabled extension, no restart, or testing in a pre-restart conversation all make the tools show up as \"unavailable\".",
+  },
+
+  "mcp.step3Title": { zh: "测试读取记忆（list_projects / get_project_memory）", en: "Test reading memory (list_projects / get_project_memory)" },
+  "mcp.step3Desc": {
+    zh: "连接好之后，在 Claude Desktop 的新对话里让它读取你的记忆。把下面这句发给 Claude：",
+    en: "Once connected, in a new Claude Desktop conversation ask it to read your memory. Send it this:",
+  },
+  "mcp.step3PromptLabel": { zh: "示例 prompt", en: "Example prompt" },
+  "mcp.step3Prompt": {
+    zh: "先用 list_projects 看看我的 MemoryOS 里有哪些项目，挑一个，再用 get_project_memory 读取它，然后用一句话回述你的理解。",
+    en: "First call list_projects to see what projects are in my MemoryOS, pick one, then use get_project_memory to load it, and echo your understanding in one sentence.",
+  },
+  "mcp.step3Note": {
+    zh: "这一步只读，不会改动任何文件。Claude 回述理解后，就能接着帮你干活。",
+    en: "This step is read-only — it changes nothing. Once Claude echoes its understanding, it can pick up where you left off.",
+  },
+
+  "mcp.step4Title": { zh: "保存会话 handoff（end_session / save_session_handoff）", en: "Save a session handoff (end_session / save_session_handoff)" },
+  "mcp.step4Desc": {
+    zh: "工作告一段落时，让 Claude 把这轮总结暂存起来。把下面这句发给 Claude：",
+    en: "When you reach a stopping point, ask Claude to stage a summary of this session. Send it this:",
+  },
+  "mcp.step4PromptLabel": { zh: "示例 prompt", en: "Example prompt" },
+  "mcp.step4Prompt": {
+    zh: "我们这轮工作结束了，请用 MemoryOS 的 save_session_handoff，按标准结构把这次会话的总结暂存起来。",
+    en: "We're wrapping up this session — please use MemoryOS's save_session_handoff to stage a structured summary of what we did.",
+  },
+  "mcp.step4Note": {
+    zh: "重要：这只会进入 MemoryOS 的 Inbox（待审收件箱），不会直接写入正式记忆。Claude 会回复「已暂存，请回桌面 app 确认入库」。",
+    en: "Important: this only enters the MemoryOS Inbox — it does not write to formal memory. Claude replies \"staged — confirm in the desktop app to save\".",
+  },
+
+  "mcp.step5Title": { zh: "回到 MemoryOS Review 确认入库", en: "Back in MemoryOS: review to save" },
+  "mcp.step5Desc": {
+    zh: "回到 MemoryOS 桌面 app，主页会出现「待审」提示。点开后你可以逐条确认、编辑或丢弃——只有确认后，内容才会写进正式 memory 文件。",
+    en: "Back in the MemoryOS desktop app, a \"pending\" badge appears on the dashboard. Open it to confirm, edit, or discard each item — only after you confirm does anything get written to your formal memory files.",
+  },
+
+  // 块 2：其他支持 MCP stdio 的桌面端 / 代码 Agent（高级手动配置）
+  "mcp.s2Title": { zh: "其他支持 MCP stdio 的客户端", en: "Other MCP-stdio clients" },
+  "mcp.s2Badge": { zh: "高级配置", en: "Advanced" },
+  "mcp.s2Desc": {
+    zh: "这些客户端不是 .mcpb 一键安装，需要在它们各自的配置里手动加一个 MCP stdio server。支持 MCP stdio 的客户端通常可以这样配置：",
+    en: "These aren't one-click .mcpb installs — you add an MCP stdio server manually in each client's own config. Clients that support MCP stdio can usually be configured like this:",
+  },
+  "mcp.s2Clients": {
+    zh: "例如 Codex、Claude Code、Cursor、Continue、Cline 等。",
+    en: "e.g. Codex, Claude Code, Cursor, Continue, Cline.",
+  },
+  "mcp.s2ConfigLabel": { zh: "通用配置思路", en: "Generic config" },
+  "mcp.s2ServerPlaceholder": {
+    zh: "<你的 MemoryOS 安装目录>/_up_/server/dist/index.mjs",
+    en: "<your MemoryOS install>/_up_/server/dist/index.mjs",
+  },
+  "mcp.s2WsPlaceholder": { zh: "<你的 MemoryOS workspace 路径>", en: "<your MemoryOS workspace path>" },
+  "mcp.s2Note": {
+    zh: "这是通用思路，不保证每个客户端都已完整验证；具体字段名和文件格式（JSON / TOML 等）以各客户端的 MCP 配置文档为准。",
+    en: "This is the general idea — not every client is fully verified. Exact field names and file format (JSON / TOML, etc.) follow each client's own MCP config docs.",
+  },
+
+  // 块 3：网页端 AI / 浏览器插件（Planned）
+  "mcp.s3Title": { zh: "网页端 AI / 浏览器插件", en: "Web AI / browser extension" },
+  "mcp.s3Badge": { zh: "Planned", en: "Planned" },
+  "mcp.s3Desc": {
+    zh: "ChatGPT、Gemini、DeepSeek、Kimi 等网页版现在连不上本地 MCP server。未来计划通过浏览器插件 / 同步方案支持——本轮暂未实现。",
+    en: "Web versions of ChatGPT, Gemini, DeepSeek, Kimi, etc. can't reach a local MCP server today. Planned for the future via a browser extension / sync — not in this release.",
+  },
+  "mcp.s3Interim": {
+    zh: "在那之前，这些 AI 请用「复制粘贴教程」那一栏把记忆带回来——最后都会进同一个 Inbox 等你确认。",
+    en: "Until then, use the \"Copy & paste\" tab to bring memory back from those AIs — it lands in the same Inbox, waiting for your confirmation.",
+  },
+
+  "mcp.projectFallback": { zh: "你的项目名", en: "your project" },
+  "mcp.copyPath": { zh: "复制路径", en: "Copy path" },
+  "mcp.copyPrompt": { zh: "复制", en: "Copy" },
+  "mcp.copyConfig": { zh: "复制配置", en: "Copy config" },
+  "common.copied": { zh: "已复制", en: "Copied" },
+
 
   // ── New project modal ────────────────────────
   "newProject.title": { zh: "新建项目", en: "New project" },

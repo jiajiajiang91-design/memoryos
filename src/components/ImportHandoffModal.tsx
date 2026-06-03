@@ -76,6 +76,7 @@ export default function ImportHandoffModal({ onClose, onParsed }: Props) {
           onClick={() => {
             if (!canImport) return;
             logEvent("import.parsed", {
+              channel: "manual",
               rawLength: text.length,
               detection: detection?.status ?? "empty",
               sections: detection?.sections ?? 0,

@@ -43,6 +43,33 @@ export type ParsedHandoff = {
   compactContext: string;
 };
 
+// ── Memory Inbox（PRD v0.3.1 §4.2）─────────────────────
+// 通道无关的待审结构化 handoff。所有通道（manual / mcp / browser）只做一件事：
+// 把一个 InboxItem 写进 .memoryos/inbox/，用户 review 后才入正式 memory 文件。
+export type SourceChannel = "manual" | "mcp" | "browser";
+export type InboxStatus = "pending" | "applied" | "discarded";
+
+export type InboxItem = {
+  id: string;            // uuid
+  slug: string;          // 目标项目 slug
+  sourceChannel: SourceChannel;
+  sourceClient: string;  // Claude Desktop / Codex / ChatGPT Web …（cross_ai_reuse 以此为准）
+  sourcePlatform?: string | null; // 可选，常不可靠，允许空
+  createdAt: string;     // ISO
+  handoff: ParsedHandoff; // === 与 ParsedHandoff 同名同构，直接复用 ===
+  status: InboxStatus;
+};
+
+// MCP 连接状态（PRD v0.3.1 §4.2 .memoryos/mcp_state.json）。server 每次工具调用后写，app 读来显示
+// 「最近 MCP 活动」（非实时 socket，server↔app 无 RPC，只通过此文件通信）。
+export type McpState = {
+  lastClient: string;
+  lastTool: string;
+  lastProject?: string;
+  lastActivityAt: string; // ISO
+  serverVersion: string;
+};
+
 export type UpdateSuggestion = {
   id: string;
   targetFile: string; // "session" for the low-risk save, else file name

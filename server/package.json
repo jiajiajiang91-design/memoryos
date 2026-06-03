@@ -1,0 +1,26 @@
+{
+  "name": "memoryos-mcp",
+  "version": "0.3.0",
+  "private": true,
+  "type": "module",
+  "description": "MemoryOS local MCP server (read-only skeleton: list_projects / get_project_memory).",
+  "bin": {
+    "memoryos-mcp": "dist/index.mjs"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "build": "esbuild src/index.ts --bundle --platform=node --format=esm --target=node18 --outfile=dist/index.mjs --banner:js=\"import{createRequire}from'module';const require=createRequire(import.meta.url);\"",
+    "selftest": "esbuild src/selftest.ts --bundle --platform=node --format=esm --target=node18 --outfile=dist/selftest.mjs --banner:js=\"import{createRequire}from'module';const require=createRequire(import.meta.url);\" && node dist/selftest.mjs",
+    "smoke": "npm run build && esbuild src/smoke.stdio.ts --bundle --platform=node --format=esm --target=node18 --outfile=dist/smoke.stdio.mjs --banner:js=\"import{createRequire}from'module';const require=createRequire(import.meta.url);\" && node dist/smoke.stdio.mjs",
+    "smoke:mcpb": "npm run build && node ../scripts/build-mcpb.mjs --skip-server-build && esbuild src/smoke.mcpb.ts --bundle --platform=node --format=esm --target=node18 --outfile=dist/smoke.mcpb.mjs --banner:js=\"import{createRequire}from'module';const require=createRequire(import.meta.url);\" && node dist/smoke.mcpb.mjs"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "zod": "^3.25.76"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "esbuild": "^0.21.5",
+    "typescript": "^5.5.3"
+  }
+}
