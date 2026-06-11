@@ -28,6 +28,10 @@ export function parsedToInboxHandoff(parsed: ParsedHandoff): ParsedHandoff {
     suggestedDecisionsUpdate: parsed.suggestedDecisionsUpdate ?? "",
     suggestedAboutMeUpdate: parsed.suggestedAboutMeUpdate ?? "",
     compactContext: parsed.compactContext ?? "",
+    // 现行卡模式字段（旧 inbox JSON 没有 → 空值兜底）
+    aiSuggestions: parsed.aiSuggestions ?? "",
+    proposedCards: parsed.proposedCards ?? "",
+    proposedCardsSuperseded: [...(parsed.proposedCardsSuperseded ?? [])],
   };
 }
 
@@ -57,6 +61,28 @@ export function inboxHandoffToMarkdown(h: ParsedHandoff): string {
     lines.push("");
   };
 
+  // 现行卡模式（有六卡更新提案）→ 新 5 段版式；否则保持旧 9 段版式。
+  // 两种版式 parseHandoff 都能重新解析（round-trip），extractLatestCompactContext 也都命中。
+  if ((h.proposedCards ?? "").trim()) {
+    section("1. What We Worked On", h.whatWeWorkedOn);
+    section("2. Key Decisions", h.keyDecisions);
+    section("3. AI Suggestions", h.aiSuggestions, "None");
+    section("4. Compact Context for Next Session", h.compactContext);
+    lines.push("## 5. Proposed cards.md Update");
+    lines.push("```markdown");
+    lines.push((h.proposedCards ?? "").trim());
+    lines.push("```");
+    const sup = h.proposedCardsSuperseded ?? [];
+    if (sup.length) {
+      for (const s of sup) lines.push(`**Superseded:** ${s}`);
+    } else {
+      lines.push("**Superseded:** None");
+    }
+    lines.push("");
+    section("6. Suggested Updates to about_me.md", h.suggestedAboutMeUpdate, "No update needed.");
+    return lines.join("\n").trimEnd() + "\n";
+  }
+
   section("1. What We Worked On", h.whatWeWorkedOn);
   section("2. Key Decisions", h.keyDecisions);
   section("3. Current Project State", h.currentState);
@@ -78,6 +104,17 @@ export function inboxHandoffToMarkdown(h: ParsedHandoff): string {
 export function inboxItemToReviewState(item: InboxItem): { raw: string; parsed: ParsedHandoff } {
   const parsed = item.handoff;
   return { raw: inboxHandoffToMarkdown(parsed), parsed };
+}
+
+/**
+ * 乱码探测（真实 bug 2026-06-10：Codex 在 Windows 上把中文按西文代码页编码，
+ * 整段 CJK 变成连续的 '?' 才到达 server——盘上文件 0 个非 ASCII 字节、1799 个 0x3F）。
+ * 特征：成串的 '?'（每个 CJK 字符替换成一个 '?'，词句必然成串）。
+ * 判定：出现 ≥2 处连续 4 个以上的 '?' 即视为乱码。正常文本（含 "???" 的口语）不会命中。
+ */
+export function looksGarbled(text: string): boolean {
+  if (!text) return false;
+  return (text.match(/\?{4,}/g) ?? []).length >= 2;
 }
 
 /**

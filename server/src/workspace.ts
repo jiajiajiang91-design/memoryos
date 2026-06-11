@@ -17,12 +17,17 @@ export type ProjectListEntry = {
   name: string;
   currentGoal: string;
   updatedAt: string;
+  /** 信任模式（06-10 用户拍板）：true = app 会把该项目的 MCP 写回自动入库。 */
+  mcpAutoApply: boolean;
 };
 
 export type ProjectMemory = {
   aboutMe: string;
   context: string;
   decisions: string;
+  /** 现行卡（cards.md）全文；空串 = 该项目未启用现行卡模式（PRD·记忆质量升级）。
+   *  非空时开场注入 = aboutMe + cards（context/decisions 退为档案层，按需另查）。 */
+  cards: string;
   latestCompactContext: string;
   projectName: string;
 };
@@ -71,6 +76,7 @@ export async function listProjects(workspace: string): Promise<ProjectListEntry[
       name: (meta.name as string) ?? slug,
       currentGoal: (meta.currentGoal as string) ?? "",
       updatedAt: (meta.updatedAt as string) ?? "",
+      mcpAutoApply: (meta.mcpAutoApply as boolean) ?? false,
     });
   }
   // 按 slug 稳定排序：readdir 顺序依赖 OS/文件系统，排序后 matchProject 的
@@ -116,6 +122,7 @@ export async function getProjectMemory(
   const aboutMe = await readTextSafe(path.join(workspace, "about_me.md"));
   const context = await readTextSafe(path.join(dir, "00_context.md"));
   const decisions = await readTextSafe(path.join(dir, "decisions.md"));
+  const cards = await readTextSafe(path.join(dir, "cards.md"));
 
   const sessions: Session[] = [];
   const sessionsDir = path.join(dir, "sessions");
@@ -135,6 +142,7 @@ export async function getProjectMemory(
     aboutMe,
     context,
     decisions,
+    cards,
     latestCompactContext,
     projectName: match.name,
   };

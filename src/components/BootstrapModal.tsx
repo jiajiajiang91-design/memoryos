@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import { X, Copy, Sparkles, Check } from "lucide-react";
-import { copyToClipboard, writeAboutMe, writeProjectContext } from "../lib/fs";
-import { aboutMeBootstrapPrompt, contextBootstrapPrompt } from "../lib/parser";
+import { copyToClipboard, writeAboutMe, writeProjectCards } from "../lib/fs";
+import { aboutMeBootstrapPrompt, cardsBootstrapPrompt, cardsRebuildPrompt } from "../lib/parser";
+import { stripCodeFence, parseCardsStamp, stampCards } from "../lib/cards";
 import { useT, useLang } from "../lib/i18n";
 
 type Need = "about_me" | "context";
@@ -25,6 +26,12 @@ export default function BootstrapModal({
   existingAboutMe, existingContext, existingDecisions, latestSession,
   onClose, onSaved, onToast,
 }: Props) {
+  // 项目步骤永远产记忆卡片（2026-06-11 拍板：旧路径不再被喂养，每步操作引导转换）：
+  // 有旧资料 → 蒸馏整理；全空 → 问答生成第一页。00_context 旧引导退役。
+  const hasLegacyMaterial = !!(
+    (existingContext ?? "").trim() ||
+    (existingDecisions ?? "").trim()
+  );
   const t = useT();
   const [lang] = useLang();
   const [pasteAboutMe, setPasteAboutMe] = useState("");
@@ -52,10 +59,14 @@ export default function BootstrapModal({
     if (!projectSlug) return;
     const content = pasteContext.trim();
     if (!content) return;
-    const clean = content.replace(/^```\w*\n?/, "").replace(/\n?```$/, "");
-    await writeProjectContext(workspace, projectSlug, clean);
+    // 永远存为记忆卡片：去围栏/缩进 + 整理日期兜底（与 MigrateCardsModal 同规则）
+    let clean = stripCodeFence(content);
+    if (!parseCardsStamp(clean)) {
+      clean = stampCards(clean, new Date().toISOString().slice(0, 10), lang);
+    }
+    await writeProjectCards(workspace, projectSlug, clean);
     setSavedContext(true);
-    onToast(t("bootstrap.savedContext"));
+    onToast(t("bootstrap.savedCards"));
     onSaved();
   };
 
@@ -118,8 +129,12 @@ export default function BootstrapModal({
           {showContext && (
             <BootstrapSection
               num={showAboutMe ? 2 : 1}
-              title={t("bootstrap.contextTitle")}
-              desc={t("bootstrap.contextDesc", { name: projectName })}
+              title={t("bootstrap.cardsTitle")}
+              desc={
+                hasLegacyMaterial
+                  ? t("bootstrap.cardsRebuildDesc", { name: projectName })
+                  : t("bootstrap.cardsDesc", { name: projectName })
+              }
               saved={savedContext}
               copyLabel={t("bootstrap.copyPromptBtn")}
               pasteLabel={t("bootstrap.pasteLabel")}
@@ -130,15 +145,17 @@ export default function BootstrapModal({
               stepTwoLabel={t("bootstrap.stepTwoLabel")}
               onCopy={async () => {
                 await copyToClipboard(
-                  contextBootstrapPrompt({
-                    projectName,
-                    lang,
-                    existingContext,
-                    existingDecisions,
-                    latestSession,
-                  })
+                  hasLegacyMaterial
+                    ? cardsRebuildPrompt({
+                        projectName,
+                        existingContext: existingContext ?? "",
+                        existingDecisions: existingDecisions ?? "",
+                        latestSession,
+                        lang,
+                      })
+                    : cardsBootstrapPrompt({ projectName, lang })
                 );
-                onToast(t("bootstrap.contextPromptCopied"));
+                onToast(t("bootstrap.cardsPromptCopied"));
               }}
               pasteValue={pasteContext}
               onPasteChange={setPasteContext}

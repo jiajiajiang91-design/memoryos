@@ -13,6 +13,8 @@ export type ProjectMeta = {
   statusLabel: string;
   createdAt: string;
   updatedAt: string;
+  /** 信任模式（06-10 用户拍板）：MCP 写回到收件箱后由 app 自动入库，不再逐条确认。默认 false。 */
+  mcpAutoApply?: boolean;
 };
 
 export type Session = {
@@ -27,6 +29,8 @@ export type Session = {
 export type Project = ProjectMeta & {
   contextMarkdown: string;
   decisionsMarkdown: string;
+  /** 现行卡（cards.md）全文；空串 = 该项目未启用现行卡模式（PRD·记忆质量升级 F3）。 */
+  cardsMarkdown: string;
   sessions: Session[];
 };
 
@@ -41,6 +45,13 @@ export type ParsedHandoff = {
   suggestedDecisionsUpdate: string;
   suggestedAboutMeUpdate: string;
   compactContext: string;
+  // ── 现行卡模式（PRD·记忆质量升级 F1）。旧 inbox JSON 没有这些字段，全部 optional。──
+  /** AI 建议·待确认——未经用户拍板的想法只能住这栏（来源标记）。 */
+  aiSuggestions?: string;
+  /** AI 连带产出的 cards.md 完整新版（六卡更新提案）。 */
+  proposedCards?: string;
+  /** 提案中被替换/移除的旧条目描述（Review 划线高亮用）。 */
+  proposedCardsSuperseded?: string[];
 };
 
 // ── Memory Inbox（PRD v0.3.1 §4.2）─────────────────────
@@ -72,7 +83,7 @@ export type McpState = {
 
 export type UpdateSuggestion = {
   id: string;
-  targetFile: string; // "session" for the low-risk save, else file name
+  targetFile: string; // "session" for the low-risk save, else file name; "ai-suggestion" = AI 建议·待确认行
   riskLevel: RiskLevel;
   content: string;
   selected: boolean;
@@ -81,4 +92,6 @@ export type UpdateSuggestion = {
   originalContent?: string;
   newAddition?: string;
   superseded?: string[];
+  /** 仅 ai-suggestion：用户点了驳回 → 入防复提名单（rejected.md）。 */
+  rejected?: boolean;
 };

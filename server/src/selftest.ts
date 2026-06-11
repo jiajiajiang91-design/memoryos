@@ -120,8 +120,8 @@ async function run() {
 
   const projects = await listProjects(ws);
   eq(projects, [
-    { slug: "demo-proj", name: "Demo 项目", currentGoal: "跑通 MCP pull", updatedAt: "2026-06-01T10:30:00.000Z" },
-  ], "list_projects 输出 = project.json 原值（slug/name/currentGoal/updatedAt）");
+    { slug: "demo-proj", name: "Demo 项目", currentGoal: "跑通 MCP pull", updatedAt: "2026-06-01T10:30:00.000Z", mcpAutoApply: false },
+  ], "list_projects 输出 = project.json 原值（slug/name/currentGoal/updatedAt/mcpAutoApply）");
 
   const mem = await getProjectMemory(ws, "demo-proj");
   ok(mem !== null, "get_project_memory 命中");
@@ -205,9 +205,9 @@ async function run() {
   const client2 = new Client({ name: "selftest-client", version: "1.0.0" });
   await client2.connect(clientT2);
 
-  const saveInput = {
+  const saveInputNoCards = {
     project: "demo", // 容错匹配
-    metadata: { Date: "2026-06-02", "Source Tool": "Codex" },
+    metadata: { Date: "2026-06-02" }, // 故意不填 Source Tool：测握手名兜底（Codex 误标 Claude 的回归）
     whatWeWorkedOn: "实现 save_session_handoff",
     keyDecisions: "Decision: server 直接构造 Inbox item",
     currentState: "Phase 3 进行中",
@@ -216,6 +216,36 @@ async function run() {
     suggestedContextUpdate: "新增：MCP push 已落地",
     compactContext: "本轮把 MCP push 做完了，下一步打包。",
   };
+
+  // 工具契约强制：缺 proposedCards → 退回教学（isError），不写盘
+  const bounce = await client2.callTool({ name: "save_session_handoff", arguments: saveInputNoCards });
+  ok((bounce as any).isError === true, "缺 proposedCards → isError=true（契约强制，旧格式保存被退回）");
+  ok(String((bounce as any).content[0].text).includes("缺少记忆卡片"), "退回文案教 AI 如何补全（先 get_project_memory）");
+  ok(
+    !fs.existsSync(path.join(ws, ".memoryos", "inbox")) ||
+      fs.readdirSync(path.join(ws, ".memoryos", "inbox")).filter((n) => n.endsWith(".json") && !n.startsWith(".")).length === 0,
+    "被退回的调用不写 inbox"
+  );
+
+  // 乱码门禁：CJK 被编码降级成成串 '?'（Codex Windows 真实 bug）→ 拒收不写盘
+  const garbled = await client2.callTool({
+    name: "save_session_handoff",
+    arguments: {
+      ...saveInputNoCards,
+      whatWeWorkedOn: "- ?? MemoryOS ?????? ??????????",
+      proposedCards: "# ???? · ????\n> ??? 2026-06-10\n\n## ????\n- ??????????",
+    },
+  });
+  ok((garbled as any).isError === true, "乱码内容（成串 ?）→ isError 拒收");
+  ok(String((garbled as any).content[0].text).includes("乱码"), "拒收文案点明编码问题并给修复方法");
+  ok(
+    !fs.existsSync(path.join(ws, ".memoryos", "inbox")) ||
+      fs.readdirSync(path.join(ws, ".memoryos", "inbox")).filter((n) => n.endsWith(".json") && !n.startsWith(".")).length === 0,
+    "乱码调用不写 inbox"
+  );
+
+  const SELFTEST_CARDS = "# 记忆卡片 · Demo 项目\n> 整理于 2026-06-02\n\n## 项目卡\nselftest 用例。\n\n## 当前状态\n- 进行中：Phase 3\n\n## 约束与决策\n- [2026-06-02][用户拍板] 测试决策\n\n## 上次对话总结\nMCP push 做完。\n\n## 历史档案\n- 决策历史 → decisions.md\n";
+  const saveInput = { ...saveInputNoCards, proposedCards: SELFTEST_CARDS };
   const saveRes = await client2.callTool({ name: "save_session_handoff", arguments: saveInput });
   const saveStruct = (saveRes as any).structuredContent;
   ok(saveStruct?.staged === true, "返回 staged=true");
@@ -240,7 +270,12 @@ async function run() {
   eq(item.handoff.whatWeWorkedOn, saveInput.whatWeWorkedOn, "handoff.whatWeWorkedOn 对齐入参");
   eq(item.handoff.compactContext, saveInput.compactContext, "handoff.compactContext 对齐入参");
   eq(item.handoff.suggestedDecisionsUpdate, "", "未传的 suggested 字段补空串（对齐 ParsedHandoff）");
-  ok(Object.keys(item.handoff).length === 10, "handoff 恰好 10 个字段（= ParsedHandoff）");
+  // 13 = 旧 10 字段 + 现行卡模式 3 字段（aiSuggestions / proposedCards / proposedCardsSuperseded，PRD·记忆质量升级 F1）
+  ok(Object.keys(item.handoff).length === 13, "handoff 恰好 13 个字段（= ParsedHandoff 含现行卡字段）");
+  eq(item.handoff.aiSuggestions, "", "未传 aiSuggestions 补空串");
+  eq(item.handoff.proposedCards, saveInput.proposedCards, "proposedCards 对齐入参（契约强制后必有）");
+  ok(Array.isArray(item.handoff.proposedCardsSuperseded) && item.handoff.proposedCardsSuperseded.length === 0, "未传 proposedCardsSuperseded 补空数组");
+  eq(item.handoff.metadata["Source Tool"], "selftest-client", "AI 没填 Source Tool → 用 MCP 握手客户端名兜底（Codex 误标 Claude 的回归）");
 
   // 跨模块：server 写出的 item 能被 app 的 review 路径直接消费（server → app 闭环）
   const reviewState = inboxItemToReviewState(item);

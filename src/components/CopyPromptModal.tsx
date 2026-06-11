@@ -19,7 +19,9 @@ type Props = {
 export default function CopyPromptModal({ workspace, project, defaultSourceTool, onClose, onCopied }: Props) {
   const tt = useT();
   const [lang] = useLang();
-  const [files, setFiles] = useState({ context: true, decisions: true, session: true });
+  // 现行卡模式：cards.md 存在 → 结束指令带现行卡（生成四栏交接 + 六卡更新提案），不再带 context/decisions
+  const cardsMode = !!project.cardsMarkdown.trim();
+  const [files, setFiles] = useState({ context: true, decisions: true, session: true, cards: true });
   const [tool, setTool] = useState<SourceTool>(defaultSourceTool || "Claude");
   const [customName, setCustomName] = useState("");
   const [customOpen, setCustomOpen] = useState(false);
@@ -29,13 +31,14 @@ export default function CopyPromptModal({ workspace, project, defaultSourceTool,
     () =>
       buildEndSessionPrompt({
         projectName: project.name,
-        context: files.context ? project.contextMarkdown : "",
-        decisions: files.decisions ? project.decisionsMarkdown : "",
+        context: !cardsMode && files.context ? project.contextMarkdown : "",
+        decisions: !cardsMode && files.decisions ? project.decisionsMarkdown : "",
+        cards: cardsMode && files.cards ? project.cardsMarkdown : "",
         latestSession: (files.session && project.sessions[0]?.rawMarkdown) || "",
         sourceTool: tool,
         lang,
       }),
-    [files, project, tool, lang]
+    [files, project, tool, lang, cardsMode]
   );
 
   const tokenEstimate = Math.round(preview.length / 2.5);
@@ -44,8 +47,9 @@ export default function CopyPromptModal({ workspace, project, defaultSourceTool,
     const ctx = await readContextForPrompt(workspace, project.slug);
     const text = buildEndSessionPrompt({
       projectName: project.name,
-      context: files.context ? ctx.context : "",
-      decisions: files.decisions ? ctx.decisions : "",
+      context: !cardsMode && files.context ? ctx.context : "",
+      decisions: !cardsMode && files.decisions ? ctx.decisions : "",
+      cards: cardsMode && files.cards ? ctx.cards : "",
       latestSession: files.session ? ctx.latestSession : "",
       sourceTool: tool,
       lang,
@@ -72,18 +76,29 @@ export default function CopyPromptModal({ workspace, project, defaultSourceTool,
         <div className="text-sm font-medium mb-6">{project.name}</div>
 
         <div className="text-[13px] text-ink-soft mb-2">{tt("copyPrompt.includeLabel")}</div>
-        <FileToggle
-          name={tt("copyPrompt.fileContext")}
-          size={`${(project.contextMarkdown.length / 1024).toFixed(1)} KB`}
-          checked={files.context}
-          onChange={(v) => setFiles({ ...files, context: v })}
-        />
-        <FileToggle
-          name={tt("copyPrompt.fileDecisions")}
-          size={`${(project.decisionsMarkdown.length / 1024).toFixed(1)} KB`}
-          checked={files.decisions}
-          onChange={(v) => setFiles({ ...files, decisions: v })}
-        />
+        {cardsMode ? (
+          <FileToggle
+            name={tt("copyPrompt.fileCards")}
+            size={`${(project.cardsMarkdown.length / 1024).toFixed(1)} KB`}
+            checked={files.cards}
+            onChange={(v) => setFiles({ ...files, cards: v })}
+          />
+        ) : (
+          <>
+            <FileToggle
+              name={tt("copyPrompt.fileContext")}
+              size={`${(project.contextMarkdown.length / 1024).toFixed(1)} KB`}
+              checked={files.context}
+              onChange={(v) => setFiles({ ...files, context: v })}
+            />
+            <FileToggle
+              name={tt("copyPrompt.fileDecisions")}
+              size={`${(project.decisionsMarkdown.length / 1024).toFixed(1)} KB`}
+              checked={files.decisions}
+              onChange={(v) => setFiles({ ...files, decisions: v })}
+            />
+          </>
+        )}
         <FileToggle
           name={tt("copyPrompt.fileLatestSession")}
           size={project.sessions[0]?.date || "—"}
@@ -208,7 +223,7 @@ export function ModalShell({ children, onClose, width = "max-w-lg" }: { children
     <div onClick={onClose} className="fixed inset-0 z-50 bg-ink/[.32] flex items-center justify-center animate-fade">
       <div
         onClick={(e) => e.stopPropagation()}
-        className={`bg-surface rounded-xl shadow-[0_8px_24px_rgba(0,0,0,0.08),_0_1px_2px_rgba(0,0,0,0.04)] overflow-hidden flex flex-col w-full ${width} max-h-[calc(100vh-80px)] animate-rise`}
+        className={`bg-surface rounded-2xl shadow-[0_8px_24px_rgba(16,24,64,0.10),_0_1px_2px_rgba(16,24,64,0.04)] overflow-hidden flex flex-col w-full ${width} max-h-[calc(100vh-80px)] animate-rise`}
       >
         {children}
       </div>

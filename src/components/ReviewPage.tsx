@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Check, AlertTriangle, FileText } from "lucide-react";
+import { Check, AlertTriangle, FileText, Lightbulb } from "lucide-react";
 import type { ParsedHandoff, UpdateSuggestion } from "../types";
 import { useT } from "../lib/i18n";
 import { extractSuperseded } from "../lib/parser";
+import { parseCardsStamp } from "../lib/cards";
 import { logEvent, editPercent } from "../lib/telemetry";
 
 type Props = {
@@ -13,6 +14,8 @@ type Props = {
   currentContext: string;
   currentDecisions: string;
   currentAboutMe: string;
+  /** 目标项目的现行卡全文（空串 = 未启用现行卡模式）。 */
+  currentCards: string;
   onCancel: () => void;
   onSave: (suggestions: UpdateSuggestion[]) => void;
   /** 来自 Inbox 的 review 才有：丢弃 = 移 archive(discarded)。取消（onCancel）则保留 pending。 */
@@ -27,10 +30,10 @@ const RISK_LABEL_COLOR: Record<UpdateSuggestion["riskLevel"], string> = {
   high: "text-warn",
 };
 
-export default function ReviewPage({ projectName, raw, parsed, currentContext, currentDecisions, currentAboutMe, onCancel, onSave, onDiscard, channel = "manual" }: Props) {
+export default function ReviewPage({ projectName, raw, parsed, currentContext, currentDecisions, currentAboutMe, currentCards, onCancel, onSave, onDiscard, channel = "manual" }: Props) {
   const t = useT();
   const [suggestions, setSuggestions] = useState<UpdateSuggestion[]>(() =>
-    buildSuggestions(parsed, currentContext, currentDecisions, currentAboutMe)
+    buildSuggestions(parsed, currentContext, currentDecisions, currentAboutMe, currentCards)
   );
   const initialContents = useRef<Record<string, string>>(
     Object.fromEntries(suggestions.map((s) => [s.id, s.content]))
@@ -50,9 +53,12 @@ export default function ReviewPage({ projectName, raw, parsed, currentContext, c
   }, []);
 
   const toggle = (id: string) =>
-    setSuggestions((prev) => prev.map((s) => (s.id === id ? { ...s, selected: !s.selected } : s)));
+    setSuggestions((prev) => prev.map((s) => (s.id === id ? { ...s, selected: !s.selected, rejected: false } : s)));
   const updateContent = (id: string, content: string) =>
     setSuggestions((prev) => prev.map((s) => (s.id === id ? { ...s, content } : s)));
+  // 驳回（仅 ai-suggestion）：与采纳互斥，入防复提名单
+  const toggleReject = (id: string) =>
+    setSuggestions((prev) => prev.map((s) => (s.id === id ? { ...s, rejected: !s.rejected, selected: false } : s)));
   const selectedCount = suggestions.filter((s) => s.selected).length;
 
   const handleConfirm = () => {
@@ -93,12 +99,14 @@ export default function ReviewPage({ projectName, raw, parsed, currentContext, c
     "00_context.md": currentContext,
     "decisions.md": currentDecisions,
     "about_me.md": currentAboutMe,
+    "cards.md": currentCards,
   };
 
   const friendlyFile = (name: string): string =>
     name === "about_me.md" ? t("sidebar.aboutMe") :
     name === "00_context.md" ? t("sidebar.context") :
-    name === "decisions.md" ? t("sidebar.decisions") : name;
+    name === "decisions.md" ? t("sidebar.decisions") :
+    name === "cards.md" ? t("sidebar.cards") : name;
 
   const RISK_LABEL: Record<UpdateSuggestion["riskLevel"], string> = {
     low: t("review.riskLow"),
@@ -121,7 +129,7 @@ export default function ReviewPage({ projectName, raw, parsed, currentContext, c
   void raw;
 
   return (
-    <div className="flex-1 flex flex-col bg-paper min-w-0">
+    <div className="flex-1 flex flex-col bg-surface rounded-2xl shadow-panel min-w-0 overflow-hidden">
       <div className="flex-1 overflow-y-auto">
         <div className="pl-16 pr-12 pt-12 pb-12 max-w-[832px]">
           <div className="text-xs text-ink-soft mb-6">
@@ -168,17 +176,27 @@ export default function ReviewPage({ projectName, raw, parsed, currentContext, c
                   </span>
                   <div className="flex-1 h-px bg-hairline" />
                 </div>
-                {list.map((s) => (
-                  <SuggestionRow
-                    key={s.id}
-                    s={s}
-                    onToggle={() => toggle(s.id)}
-                    onUpdateContent={(c) => updateContent(s.id, c)}
-                    currentContent={currentFileContent[s.targetFile] ?? ""}
-                    t={t}
-                    friendlyFile={friendlyFile}
-                  />
-                ))}
+                {list.map((s) =>
+                  s.targetFile === "ai-suggestion" ? (
+                    <AiSuggestionRow
+                      key={s.id}
+                      s={s}
+                      onToggle={() => toggle(s.id)}
+                      onReject={() => toggleReject(s.id)}
+                      t={t}
+                    />
+                  ) : (
+                    <SuggestionRow
+                      key={s.id}
+                      s={s}
+                      onToggle={() => toggle(s.id)}
+                      onUpdateContent={(c) => updateContent(s.id, c)}
+                      currentContent={currentFileContent[s.targetFile] ?? ""}
+                      t={t}
+                      friendlyFile={friendlyFile}
+                    />
+                  )
+                )}
               </div>
             );
           })}
@@ -212,9 +230,56 @@ function buildSuggestions(
   currentContext: string,
   currentDecisions: string,
   currentAboutMe: string,
+  currentCards: string,
 ): UpdateSuggestion[] {
   const out: UpdateSuggestion[] = [];
   out.push({ id: "save-session", targetFile: "session", riskLevel: "low", content: "", selected: true });
+
+  // ── 记忆卡片模式（PRD·记忆质量升级 F2）：卡片更新提案 + AI 建议·待确认 ──
+  const proposed = (p.proposedCards ?? "").trim();
+  if (proposed) {
+    // 并发兜底（整理日期）：提案保留的日期 ≠ 当前文件日期 → 提案产生后卡片又变过 → 默认不勾 + 警示
+    const baseStamp = parseCardsStamp(proposed);
+    const curStamp = parseCardsStamp(currentCards);
+    const dateMismatch = !!(
+      currentCards.trim() && baseStamp && curStamp && baseStamp.distilledOn !== curStamp.distilledOn
+    );
+    out.push({
+      id: "cards", targetFile: "cards.md", riskLevel: "medium",
+      content: proposed, selected: !dateMismatch, mode: "replace",
+      originalContent: currentCards, newAddition: proposed,
+      superseded: p.proposedCardsSuperseded ?? [],
+      warning: dateMismatch ? "__cardsVersionWarning__" : undefined,
+    });
+    // AI 建议逐条成行：默认不勾（待确认），勾选 = 采纳为决策，驳回 = 入防复提名单
+    const sugLines = (p.aiSuggestions ?? "")
+      .split("\n")
+      .map((l) => l.replace(/^[-*]\s*/, "").trim())
+      .filter((l) => l && !/^(none|无|没有|n\/a)\.?$/i.test(l));
+    sugLines.forEach((line, i) =>
+      out.push({
+        id: `ai-sug-${i}`, targetFile: "ai-suggestion", riskLevel: "high",
+        content: line, selected: false,
+      })
+    );
+    // 关于我（全局身份文件）通道保留：长期偏好仍可沉淀，high risk + 默认不勾
+    if (p.suggestedAboutMeUpdate && !/no update/i.test(p.suggestedAboutMeUpdate)) {
+      const superseded = extractSuperseded(p.suggestedAboutMeUpdate);
+      const cleanedOld = superseded.length ? stripSuperseded(currentAboutMe, superseded) : currentAboutMe;
+      const cleanedNew = stripSupersededLines(p.suggestedAboutMeUpdate);
+      const stamp = "\n\n---\n_Updated " + new Date().toISOString().slice(0, 10) + "_\n\n";
+      const merged = cleanedOld.trim() ? cleanedOld.trimEnd() + stamp + cleanedNew + "\n" : cleanedNew;
+      out.push({
+        id: "aboutme", targetFile: "about_me.md", riskLevel: "high",
+        content: merged, selected: false, mode: "replace",
+        originalContent: currentAboutMe, newAddition: cleanedNew,
+        superseded,
+        warning: "__aboutMeWarning__",
+      });
+    }
+    return out; // 记忆卡片模式不再走旧 context/decisions 建议路径
+  }
+
   if (p.suggestedContextUpdate && !/no update/i.test(p.suggestedContextUpdate)) {
     const superseded = extractSuperseded(p.suggestedContextUpdate);
     const cleanedOld = superseded.length ? stripSuperseded(currentContext, superseded) : currentContext;
@@ -275,7 +340,9 @@ function SuggestionRow({
   friendlyFile: (name: string) => string;
 }) {
   const [editing, setEditing] = useState(false);
-  const warningText = s.warning === "__aboutMeWarning__" ? t("review.aboutMeWarning") : s.warning;
+  const warningText =
+    s.warning === "__aboutMeWarning__" ? t("review.aboutMeWarning") :
+    s.warning === "__cardsVersionWarning__" ? t("review.cardsVersionWarning") : s.warning;
   const isReplace = s.mode === "replace";
 
   return (
@@ -407,6 +474,55 @@ function HighlightedOldContent({
           <pre key={i} className="whitespace-pre-wrap text-[13px] text-ink-faint">{para}</pre>
         );
       })}
+    </div>
+  );
+}
+
+/**
+ * AI 建议·待确认行（来源标记的 UI 面）：
+ * 勾选 = 采纳为决策（升格日期 = 今天）；「驳回」= 入防复提名单；都不动 = 只留在归档的交接里。
+ */
+function AiSuggestionRow({
+  s, onToggle, onReject, t,
+}: {
+  s: UpdateSuggestion;
+  onToggle: () => void;
+  onReject: () => void;
+  t: (key: string, vars?: Record<string, string | number>) => string;
+}) {
+  return (
+    <div className="flex items-start gap-3 py-3">
+      <button
+        onClick={onToggle}
+        disabled={s.rejected}
+        className={`mt-0.5 w-4 h-4 rounded-sm border-[1.5px] flex items-center justify-center shrink-0 transition-colors ${
+          s.selected ? "bg-slate border-slate" : "bg-white border-ink-faint"
+        } ${s.rejected ? "opacity-30" : ""}`}
+      >
+        {s.selected && (
+          <svg width="10" height="10" viewBox="0 0 12 12" fill="none">
+            <path d="M2.5 6.2 4.8 8.5 9.5 3.5" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        )}
+      </button>
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-2 text-sm font-medium mb-1">
+          <Lightbulb size={13} strokeWidth={1.5} className="text-ochre shrink-0" />
+          <span>{t("review.aiSuggestionRow")}</span>
+          <span className="text-[11px] font-normal text-ink-faint border border-hairline rounded px-1.5 py-px">
+            {t("review.pendingBadge")}
+          </span>
+        </div>
+        <div className={`text-[13px] leading-[1.6] px-3 py-2 bg-paper border-l-2 border-hairline rounded-sm ${s.rejected ? "line-through text-ink-faint" : "text-ink-soft"}`}>
+          {s.content}
+        </div>
+        <div className="mt-1 flex items-center gap-3 text-xs">
+          <span className="text-ink-faint">{s.selected ? t("review.adoptedHint") : s.rejected ? t("review.rejectedHint") : t("review.untouchedHint")}</span>
+          <button onClick={onReject} className={`transition-colors ${s.rejected ? "text-warn font-medium" : "text-ink-faint hover:text-warn"}`}>
+            {s.rejected ? t("review.undoRejectBtn") : t("review.rejectBtn")}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

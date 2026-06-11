@@ -38,6 +38,41 @@ function extract(text: string, heading: string): string {
   return "";
 }
 
+/**
+ * 抽取「六卡更新提案」（现行卡模式，PRD·记忆质量升级 F1）。
+ * 提案本身是一份完整 cards.md（内含 ## 二级标题），普通按-下一个-标题-截断的 extract()
+ * 会把它切碎，所以要求 AI 放在 ``` 围栏代码块里，这里手工定位围栏边界。
+ * 返回 { cards: 围栏内全文, tail: 围栏后的剩余文本（供扫 Superseded 行） }。
+ */
+function extractCardsProposal(raw: string): { cards: string; tail: string } {
+  const headings = [
+    "Proposed cards.md Update",
+    "Proposed Cards Update",
+    "现行卡更新提案",
+    "建议更新到现行卡",
+  ];
+  for (const h of headings) {
+    const escaped = h.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const hm = raw.match(
+      new RegExp(
+        `(?:^|\\n)[ \\t]*(?:#{1,3}\\s*(?:\\d+\\.?\\s+)?|\\*\\*\\s*(?:\\d+\\.?\\s+)?)?${escaped}`,
+        "i"
+      )
+    );
+    if (!hm || hm.index === undefined) continue;
+    const after = raw.slice(hm.index + hm[0].length);
+    const fenceOpen = after.match(/```(?:markdown|md)?[ \t]*\n/);
+    if (!fenceOpen || fenceOpen.index === undefined) continue;
+    const bodyStart = fenceOpen.index + fenceOpen[0].length;
+    const fenceClose = after.slice(bodyStart).indexOf("\n```");
+    if (fenceClose === -1) continue;
+    const cards = after.slice(bodyStart, bodyStart + fenceClose).trim();
+    const tail = after.slice(bodyStart + fenceClose + 4, bodyStart + fenceClose + 4 + 2000);
+    return { cards, tail };
+  }
+  return { cards: "", tail: "" };
+}
+
 export function parseHandoff(raw: string): ParsedHandoff {
   const metaText = extract(raw, "Metadata");
   const metadata: Record<string, string> = {};
@@ -53,6 +88,7 @@ export function parseHandoff(raw: string): ParsedHandoff {
     const t = raw.match(/Source Tool:\s*(\w+)/)?.[1];
     if (t) metadata["Source Tool"] = t;
   }
+  const proposal = extractCardsProposal(raw);
   return {
     metadata,
     whatWeWorkedOn:
@@ -85,6 +121,13 @@ export function parseHandoff(raw: string): ParsedHandoff {
       extract(raw, "Compact Context for Next Session") ||
       extract(raw, "Compact Context") ||
       extract(raw, "压缩上下文") || extract(raw, "下次对话"),
+    // ── 现行卡模式（旧格式 handoff 解析出来就是空串/空数组，互不影响）──
+    aiSuggestions:
+      extract(raw, "AI Suggestions") ||
+      extract(raw, "AI 建议") ||
+      extract(raw, "建议待确认"),
+    proposedCards: proposal.cards,
+    proposedCardsSuperseded: proposal.cards ? extractSuperseded(proposal.tail) : [],
   };
 }
 
@@ -95,6 +138,7 @@ export function extractSuperseded(suggestedUpdate: string): string[] {
   while ((m = re.exec(suggestedUpdate)) !== null) {
     for (const part of m[1].split(/[;；,，]/)) {
       const trimmed = part.replace(/^["'「」"']+|["'「」"']+$/g, "").trim();
+      if (/^(none|无|没有|n\/a)\.?$/i.test(trimmed)) continue; // 占位词不是关键词
       if (trimmed && trimmed.length > 2) out.push(trimmed);
     }
   }
@@ -212,6 +256,7 @@ ${existing}
 输出时请只给我 Markdown 内容，不要解释。`;
 }
 
+/** @deprecated 2026-06-11 退役：项目引导一律产记忆卡片（cardsBootstrapPrompt / cardsRebuildPrompt），不再生成 00_context。保留仅为历史兼容。 */
 export function contextBootstrapPrompt(
   projectNameOrOpts:
     | string
@@ -368,16 +413,265 @@ ${latestSession || "_(无)_"}
 输出时请只给我 Markdown 内容，不要解释。`;
 }
 
+/**
+ * 新项目引导（卡片原生，PRD·记忆质量升级 F3）：和 AI 问答几句，直接产出第一页记忆卡片。
+ * 新用户从第一天起就是卡片模式，永远不需要经历"整理旧文档"的迁移步骤。
+ */
+export function cardsBootstrapPrompt(opts: { projectName: string; lang?: Lang }): string {
+  const lang: Lang = opts.lang ?? "zh";
+  if (lang === "en") {
+    return `I just created a project "${opts.projectName}" in MemoryOS. Help me write its first page of "memory cards" (every future AI session reads this page first).
+
+Ask me a few quick questions:
+
+1. What this is + who it's for (within 3 sentences)
+2. Where it stands (done / in progress / stuck on)
+3. Anything already decided or constrained (each with a date if you can)
+4. Where the next session should start
+
+Rules: don't invent anything I didn't say; decisions I state get \`[date][ratified]\`; keep the whole page ≤ 1200 characters (excluding whitespace).
+
+After the Q&A, output ONLY the memory cards inside one markdown code fence, exactly in this structure:
+
+\`\`\`markdown
+# Memory Cards · ${opts.projectName}
+> Tidied (today's date)
+
+## Project
+…
+
+## Current State
+- Done: …
+- In progress: …
+- Stuck on: …
+
+## Constraints & Decisions
+- [date][ratified] …
+
+## Last Session Summary
+(first session — where to start)
+
+## Archives
+- Decision history → decisions.md / rejected.md in the project folder
+- Past session summaries → sessions/ in the project folder
+(Fetch on demand — do not read everything.)
+\`\`\`
+`;
+  }
+  return `我刚在 MemoryOS 里新建了项目「${opts.projectName}」。请帮我写出它的第一页「记忆卡片」（以后每次新 AI 对话开场只读这一页）。
+
+请先问我几个问题：
+
+1. 这是什么 + 给谁用（三句话以内）
+2. 现在到哪了（已完成 / 进行中 / 卡住的地方）
+3. 已经定下来的事或约束（能给日期就给日期）
+4. 下次对话该从哪开始
+
+规则：我没说过的不许编；我明确说定的事写成 \`[日期][用户拍板]\`；全文 ≤ 1200 字（不计空白）。
+
+问完后，只输出一个 markdown 代码块内的记忆卡片全文，严格用这个结构：
+
+\`\`\`markdown
+# 记忆卡片 · ${opts.projectName}
+> 整理于 （今天日期）
+
+## 项目卡
+…
+
+## 当前状态
+- 已完成：…
+- 进行中：…
+- 当前卡点：…
+
+## 约束与决策
+- [日期][用户拍板] …
+
+## 上次对话总结
+（首次对话——从哪开始）
+
+## 历史档案
+- 决策历史 → 项目文件夹 decisions.md / rejected.md
+- 历次对话总结 → 项目文件夹 sessions/
+（需要细节再取，勿全读）
+\`\`\`
+`;
+}
+
+/**
+ * 旧项目迁移：把现有 00_context.md / decisions.md / 最近交接 蒸馏成第一版现行卡。
+ * （PRD·记忆质量升级 F3 边界「旧项目迁移」——AI 出提案、用户确认后保存，旧文件冻结为档案。）
+ */
+export function cardsRebuildPrompt(opts: {
+  projectName: string;
+  existingContext: string;
+  existingDecisions: string;
+  latestSession?: string;
+  lang?: Lang;
+}): string {
+  const lang: Lang = opts.lang ?? "zh";
+  const ctx = opts.existingContext.trim() || (lang === "en" ? "_(empty)_" : "_(空)_");
+  const dec = opts.existingDecisions.trim() || (lang === "en" ? "_(empty)_" : "_(空)_");
+  const last = (opts.latestSession ?? "").trim() || (lang === "en" ? "_(none)_" : "_(无)_");
+
+  if (lang === "en") {
+    return `Help me tidy up the messy documents of my project "${opts.projectName}" into ONE clean page of "memory cards" (this is what every future AI session reads first).
+
+Rules:
+1. **Only the present survives**: dated "_Updated_" append blocks must be merged — keep the latest state of each topic, drop outdated/duplicated lines. No history narration.
+2. **Decisions**: keep only currently-valid ones, each as \`- [YYYY-MM-DD][ratified] …\`. If a decision was clearly superseded by a later one, drop it (it stays in the old files). If you cannot verify something was actually ratified by me, mark it \`[unverified — confirm]\` instead of presenting it as fact.
+3. **Never invent**: anything not in the documents below must not appear.
+4. **Length**: the whole page ≤ 1200 characters (excluding whitespace).
+5. Ask me at most 1-2 questions first if something critical is ambiguous; otherwise output directly.
+
+Output ONLY the memory cards inside one markdown code fence, using exactly this structure:
+
+\`\`\`markdown
+# Memory Cards · ${opts.projectName}
+> Tidied (today's date)
+
+## Project
+(what this is / who it's for / where it stands — within 3 sentences)
+
+## Current State
+- Done: (milestone chain only)
+- In progress:
+- Stuck on:
+
+## Constraints & Decisions
+- [date][ratified] …
+
+## Last Session Summary
+(latest only: what was done / what was ratified / where to start next)
+
+## Archives
+- Decision history (incl. superseded & rejected) → decisions.md / rejected.md in the project folder
+- Past session summaries → sessions/ in the project folder
+(Fetch on demand — do not read everything.)
+\`\`\`
+
+---
+
+## Old 00_context.md
+${ctx}
+
+## Old decisions.md
+${dec}
+
+## Latest session summary (recent context only)
+${last}
+`;
+  }
+
+  return `请帮我把项目「${opts.projectName}」又长又乱的旧文档，整理成一页干净的「记忆卡片」（以后每次新 AI 对话开场只读这一页）。
+
+整理规则：
+1. **只留现在时**：旧文档里按日期追加的「_Updated_」块必须合并——同一主题只保留最新状态，过期和重复的丢掉。不要任何历史过程叙事。
+2. **决策**：只保留现在仍有效的，每条写成 \`- [YYYY-MM-DD][用户拍板] …\`。明显被后来决策替代的不要收（它们留在旧文件里）。无法确认是否真由我拍板的，标 \`[来源待核]\`，不许当成既定事实。
+3. **禁止编造**：下面文档里没有的内容一律不许出现。
+4. **长度**：全文 ≤ 1200 字（不计空白）。
+5. 如有关键歧义，最多先问我 1-2 个问题；否则直接输出。
+
+只输出一个 markdown 代码块内的记忆卡片全文，严格用这个结构：
+
+\`\`\`markdown
+# 记忆卡片 · ${opts.projectName}
+> 整理于 （今天日期）
+
+## 项目卡
+（这是什么 / 给谁用 / 现在到哪了——三句话以内）
+
+## 当前状态
+- 已完成：（只列里程碑链）
+- 进行中：
+- 当前卡点：
+
+## 约束与决策
+- [日期][用户拍板] …
+
+## 上次对话总结
+（只保留最近一次：上次做了什么 / 拍了什么板 / 本次从哪开始）
+
+## 历史档案
+- 决策历史（含已作废、已驳回）→ 项目文件夹 decisions.md / rejected.md
+- 历次对话总结 → 项目文件夹 sessions/
+（需要细节再取，勿全读）
+\`\`\`
+
+---
+
+## 旧 00_context.md
+${ctx}
+
+## 旧 decisions.md
+${dec}
+
+## 最近一次对话总结（只供了解近况）
+${last}
+`;
+}
+
 export function buildStartSessionPrompt(opts: {
   projectName: string;
   aboutMe: string;
   context: string;
   decisions: string;
   latestCompactContext: string;
+  /** 现行卡全文。非空 = 现行卡模式：开场注入 = 关于我 + 卡片原文（所见即所注），不再拼 context/decisions。 */
+  cards?: string;
   lang?: Lang;
 }): string {
   const lang: Lang = opts.lang ?? "zh";
   const parts: string[] = [];
+
+  // ── 现行卡模式（PRD·记忆质量升级 F3：黄金输出 + 三问测试）──
+  if (opts.cards?.trim()) {
+    if (lang === "en") {
+      parts.push(`Please read my working context below, then continue helping me.`);
+      parts.push(``);
+      parts.push(`---`);
+      parts.push(``);
+      if (opts.aboutMe.trim()) {
+        parts.push(`## About me`);
+        parts.push(opts.aboutMe.trim());
+        parts.push(``);
+      }
+      parts.push(opts.cards.trim());
+      parts.push(``);
+      parts.push(`---`);
+      parts.push(``);
+      parts.push(`After reading, answer in one sentence each — without asking me anything:`);
+      parts.push(`1. Who I am and how to work with me`);
+      parts.push(`2. The project's goal, current state, and current blocker`);
+      parts.push(`3. Where we left off and where this session starts`);
+      parts.push(``);
+      parts.push(`The "Archives" card lists deeper records — fetch them only when needed, don't read everything.`);
+      parts.push(``);
+      parts.push(`Once confirmed, let's start today's work.`);
+      return parts.join("\n");
+    }
+    parts.push(`请先读取以下我的工作上下文，理解后再继续帮我工作。`);
+    parts.push(``);
+    parts.push(`---`);
+    parts.push(``);
+    if (opts.aboutMe.trim()) {
+      parts.push(`## 关于我`);
+      parts.push(opts.aboutMe.trim());
+      parts.push(``);
+    }
+    parts.push(opts.cards.trim());
+    parts.push(``);
+    parts.push(`---`);
+    parts.push(``);
+    parts.push(`读完后，请不要追问，直接用一句话告诉我你理解的：`);
+    parts.push(`1. 我是谁、怎么和我协作`);
+    parts.push(`2. 项目目标、当前状态和当前卡点`);
+    parts.push(`3. 上次停在哪里、本次从哪开始`);
+    parts.push(``);
+    parts.push(`「历史档案」卡里列了更深的资料，需要时再调取，不要全部读。`);
+    parts.push(``);
+    parts.push(`确认无误后，我们开始今天的工作。`);
+    return parts.join("\n");
+  }
 
   if (lang === "en") {
     parts.push(`Please read my working context below, then continue helping me.`);
@@ -465,6 +759,8 @@ export function buildEndSessionPrompt(opts: {
   context: string;
   decisions: string;
   latestSession: string;
+  /** 现行卡全文。非空 = 现行卡模式：生成四栏交接 + 六卡更新提案（PRD·记忆质量升级 F1）。 */
+  cards?: string;
   /** 用户在 CopyPromptModal 选的来源工具，预填进 handoff 的 Metadata。 */
   sourceTool?: string;
   lang?: Lang;
@@ -475,22 +771,17 @@ export function buildEndSessionPrompt(opts: {
     ? `- Source Tool: ${opts.sourceTool.trim()}`
     : `- Source Tool:`;
 
-  if (lang === "en") {
-    return `Based on our conversation, generate a MemoryOS Session Handoff.
+  // ── 现行卡模式 ──
+  if (opts.cards?.trim()) {
+    if (lang === "en") {
+      return `Based on our conversation, generate a MemoryOS Session Handoff (cards mode).
 
 Rules:
-1. Don't rehash the entire transcript.
-2. Keep only what's truly needed to continue work next time.
-3. Extract goals, progress, key decisions, open questions, next actions.
-4. If long-term-worthy info surfaced, put it in Suggested Updates.
-5. Don't invent anything that wasn't in this conversation.
-6. Use the Markdown structure below exactly.
-
-**FORMAT IS CRITICAL — my app parses your output by these headings:**
-- Every section MUST start with \`## N. Title\` (e.g. \`## 1. What We Worked On\`)
-- Do NOT drop the \`##\` or the section number
-- Do NOT output plain text without Markdown headings
-- Keep the English section titles exactly as shown below
+1. Don't rehash the transcript — keep only what the next session truly needs.
+2. Section 2 accepts ONLY decisions I explicitly ratified, each with my quote (or a close paraphrase) + date.
+3. NEVER put suggestions, guesses, or unconfirmed plans into sections 1 or 2. When unsure where something belongs, it goes to section 3.
+4. Don't invent anything that wasn't in this conversation.
+5. Use the exact Markdown structure below — my app parses your output by these headings (\`## N. Title\`, keep the English titles).
 
 ---
 
@@ -503,44 +794,162 @@ ${sourceToolLine}
 - Session Goal:
 
 ## 1. What We Worked On
-(3-6 bullets)
+(Facts only — things that actually happened, past tense, 3-6 bullets)
 
 ## 2. Key Decisions
-- Decision:
-  - Reason:
-  - Impact:
+(ONLY what I explicitly ratified. Format per entry:)
+- Decision: …
+  - Date: …
+  - Quote: "my words or a close paraphrase"
 
-## 3. Current Project State
+## 3. AI Suggestions
+(Everything you think we should do but I did NOT ratify — one per line. Write "None" if empty.)
 
-## 4. Open Questions
+## 4. Compact Context for Next Session
+(150-250 words: what we did / what was ratified / suggested starting point. To-dos: only ones I ratified.)
 
-## 5. Next Actions
-(ordered by priority)
+## 5. Proposed cards.md Update
+Based on the "Current memory cards" below, output the tidied NEW full version inside a markdown code fence:
+- Current State card: replace-style update (done items move to Done; new work into In progress; resolved blockers removed) — present tense only
+- Constraints & Decisions card: append new ratified decisions with dates; REMOVE entries contradicted this session (list them after the fence as Superseded)
+- Last Session Summary card: replace wholesale with this session
+- Keep the "> Tidied …" line exactly as-is — do not change its date
+- Keep the whole file within 1200 characters (excluding whitespace)
+After the code fence, list every removed/replaced old entry:
+**Superseded:** one-line description (one per line; write "None" if nothing)
 
-## 6. Suggested Updates to 00_context.md
-(if none, write "No update needed.")
-If updating, also list what old content is now outdated:
-**Superseded:** one-line description of what to remove (e.g. "task XX in 'In progress' is now done")
-
-## 7. Suggested Updates to decisions.md
-(if none, write "No update needed.")
-If updating, also list which old decisions were overturned or modified this session:
-**Superseded:** old decision title or keyword (e.g. "PRD path B")
-
-## 8. Suggested Updates to about_me.md
-(only if a clear, stable, long-term user preference surfaced)
-
-## 9. Compact Context for Next Session
-(150-250 words, the must-read briefing for the next AI session)
+## 6. Suggested Updates to about_me.md
+(ONLY if a clear, stable, long-term user preference surfaced this session; otherwise write "No update needed.")
 
 ---
 
-Here's the current project context:
+Current project context:
 
-## Current 00_context.md
+## Current memory cards (cards.md)
+${opts.cards}
+
+## Latest session summary
+${opts.latestSession}
+`;
+    }
+    return `你现在需要根据我们本轮对话，生成一份 MemoryOS Session Handoff（记忆卡片模式）。
+
+规则：
+1. 不要复述完整聊天记录，只保留下次继续工作真正需要的信息。
+2. 第 2 节只收我**明确拍板**的决定，每条附我的原话（或紧贴转述）+ 日期。
+3. 禁止把建议、推测、未经我确认的计划写入第 1、2 节；不确定归属时一律放第 3 节。
+4. 不要编造本轮对话中没有出现的信息。
+5. 严格使用下方 Markdown 格式——我的 App 按标题解析（每节 \`## 数字. 标题\`，标题保持英文原文）。
+
+---
+
+# MemoryOS Session Handoff
+
+## Metadata
+- Date:
+${sourceToolLine}
+- Project: ${opts.projectName}
+- Session Goal:
+
+## 1. What We Worked On
+（只写已发生的事实，过去时，3-6 条）
+
+## 2. Key Decisions
+（只收我明确拍板的，每条格式：）
+- Decision: …
+  - Date: …
+  - Quote: 「我的原话或紧贴转述」
+
+## 3. AI Suggestions
+（你认为该做但我**没有拍板**的，全部放这里，每条一行；没有就写 "None"）
+
+## 4. Compact Context for Next Session
+（150-250 字：上次做了什么 / 拍了什么板 / 本次建议起点；待办只列我拍过板的）
+
+## 5. Proposed cards.md Update
+基于下方「当前记忆卡片」，把整理后的**完整新版**放在 markdown 代码块里输出：
+- 当前状态卡：替换式更新（完成的移入已完成、新开的进进行中、解决的卡点移除）——只保留现在时
+- 约束与决策卡：新拍板的带日期追加；本轮被推翻的旧条目从卡上移除（在代码块后用 Superseded 列出）
+- 上次对话总结卡：整卡替换为本次内容
+- 「> 整理于 …」这一行原样保留，不要自己改日期
+- 全文控制在 1200 字以内（不计空白）
+代码块之后，逐条列出被替换/移除的旧条目：
+**Superseded:** 一句话描述（每条一行；没有就写 "None"）
+
+## 6. Suggested Updates to about_me.md
+（仅当本轮出现明确、长期、稳定的用户偏好时才写；否则写 "No update needed."）
+
+---
+
+以下是当前项目上下文：
+
+## 当前记忆卡片（cards.md）
+${opts.cards}
+
+## 最近一次对话总结
+${opts.latestSession}
+`;
+  }
+
+  // ── 无卡片项目（旧项目/跳过引导的新项目）：结束指令顺手完成迁移——
+  // 除四栏交接外，让 AI 把旧资料 + 本轮对话蒸馏成第一页记忆卡片提案。
+  // 旧 9 段格式从此退役为解析容错（parseHandoff 仍认，但不再有任何入口生成它）。
+  if (lang === "en") {
+    return `Based on our conversation, generate a MemoryOS Session Handoff (first Memory Cards page).
+
+This project has no Memory Cards yet. Besides the handoff, distill the legacy material below plus this conversation into the FIRST page of memory cards — every future session starts from that page.
+
+Rules:
+1. Don't rehash the transcript — keep only what the next session truly needs.
+2. Section 2 accepts ONLY decisions I explicitly ratified, each with my quote (or close paraphrase) + date.
+3. NEVER put suggestions, guesses, or unconfirmed plans into sections 1 or 2. When unsure, it goes to section 3.
+4. Don't invent anything that isn't in this conversation or the legacy material below.
+5. Use the exact Markdown structure below — my app parses your output by these headings (\`## N. Title\`, keep the English titles).
+
+---
+
+# MemoryOS Session Handoff
+
+## Metadata
+- Date:
+${sourceToolLine}
+- Project: ${opts.projectName}
+- Session Goal:
+
+## 1. What We Worked On
+(Facts only — things that actually happened, past tense, 3-6 bullets)
+
+## 2. Key Decisions
+(ONLY what I explicitly ratified. Format per entry:)
+- Decision: …
+  - Date: …
+  - Quote: "my words or a close paraphrase"
+
+## 3. AI Suggestions
+(Everything you think we should do but I did NOT ratify — one per line. Write "None" if empty.)
+
+## 4. Compact Context for Next Session
+(150-250 words: what we did / what was ratified / suggested starting point. To-dos: only ones I ratified.)
+
+## 5. Proposed cards.md Update
+Output the FIRST page of memory cards inside a markdown code fence. Distillation rules:
+- From the legacy material, keep only the latest state of each topic (merge dated "_Updated_" blocks, drop outdated/duplicated lines), then fold in this session's progress
+- Decisions: only currently-valid ones as \`- [date][ratified] …\`; mark \`[unverified — confirm]\` if you can't confirm I actually ratified it
+- Fixed structure: \`# Memory Cards · ${opts.projectName}\` / \`> Tidied (today's date)\` / \`## Project\` / \`## Current State\` / \`## Constraints & Decisions\` / \`## Last Session Summary\` / \`## Archives\` (Archives card is fixed: decision history → decisions.md / rejected.md; past sessions → sessions/; fetch on demand)
+- Whole file ≤ 1200 characters (excluding whitespace)
+After the code fence write one line: **Superseded:** None
+
+## 6. Suggested Updates to about_me.md
+(ONLY if a clear, stable, long-term user preference surfaced; otherwise write "No update needed.")
+
+---
+
+Legacy material to distill:
+
+## Legacy 00_context.md
 ${opts.context}
 
-## Current decisions.md
+## Legacy decisions.md
 ${opts.decisions}
 
 ## Latest session handoff
@@ -548,21 +957,16 @@ ${opts.latestSession}
 `;
   }
 
-  return `你现在需要根据我们本轮对话，生成一份 MemoryOS Session Handoff。
+  return `你现在需要根据我们本轮对话，生成一份 MemoryOS Session Handoff（首次生成记忆卡片）。
+
+这个项目还没有「记忆卡片」。除了整理本轮交接，你还要把下方旧资料 + 本轮对话蒸馏成**第一页记忆卡片**——以后每次对话开场只读这一页。
 
 规则：
-1. 不要复述完整聊天记录。
-2. 只保留下一次继续工作真正需要继承的信息。
-3. 提取目标、进展、重要决策、未解决问题、下一步行动。
-4. 如果本轮对话出现需要长期保存的信息，放入 Suggested Updates。
-5. 不要编造未在本轮对话中出现的信息。
-6. 严格使用下方 Markdown 格式。
-
-**格式非常重要——我的 App 靠这些标题来解析你的输出：**
-- 每个章节必须用 \`## 数字. 标题\` 开头（例如 \`## 1. What We Worked On\`）
-- 不要省略 \`##\` 和章节编号
-- 不要输出没有 Markdown 标题的纯文字
-- 章节标题请保持下方模板中的英文原文
+1. 不要复述完整聊天记录，只保留下次继续工作真正需要的信息。
+2. 第 2 节只收我**明确拍板**的决定，每条附我的原话（或紧贴转述）+ 日期。
+3. 禁止把建议、推测、未经我确认的计划写入第 1、2 节；不确定归属时一律放第 3 节。
+4. 不要编造本轮对话和下方旧资料中没有出现的信息。
+5. 严格使用下方 Markdown 格式——我的 App 按标题解析（每节 \`## 数字. 标题\`，标题保持英文原文）。
 
 ---
 
@@ -575,47 +979,42 @@ ${sourceToolLine}
 - Session Goal:
 
 ## 1. What We Worked On
-（3-6 条 bullet）
+（只写已发生的事实，过去时，3-6 条）
 
 ## 2. Key Decisions
-- Decision:
-  - Reason:
-  - Impact:
+（只收我明确拍板的，每条格式：）
+- Decision: …
+  - Date: …
+  - Quote: 「我的原话或紧贴转述」
 
-## 3. Current Project State
+## 3. AI Suggestions
+（你认为该做但我**没有拍板**的，全部放这里，每条一行；没有就写 "None"）
 
-## 4. Open Questions
+## 4. Compact Context for Next Session
+（150-250 字：上次做了什么 / 拍了什么板 / 本次建议起点；待办只列我拍过板的）
 
-## 5. Next Actions
-（按优先级排序）
+## 5. Proposed cards.md Update
+把**第一页记忆卡片**放在 markdown 代码块里输出，蒸馏规则：
+- 旧资料里同一主题只保留最新状态（按日期追加的「_Updated_」块要合并，过期/重复的丢掉），再并入本轮新进展
+- 决策只收现在仍有效的，每条 \`- [日期][用户拍板] …\`；无法确认我拍过板的标 \`[来源待核]\`
+- 结构固定：\`# 记忆卡片 · ${opts.projectName}\` / \`> 整理于 （今天日期）\` / \`## 项目卡\` / \`## 当前状态\` / \`## 约束与决策\` / \`## 上次对话总结\` / \`## 历史档案\`（历史档案卡固定写：决策历史 → decisions.md / rejected.md；历次对话总结 → sessions/；需要细节再取，勿全读）
+- 全文 ≤1200 字（不计空白）
+代码块之后写一行：**Superseded:** None
 
-## 6. Suggested Updates to 00_context.md
-（如无，写 "No update needed."）
-如果有更新，请同时列出哪些旧内容已过时需要删除，格式：
-**Superseded:** 用一句话描述要删的旧内容（例如"进行中的 XX 任务已完成"）
-
-## 7. Suggested Updates to decisions.md
-（如无，写 "No update needed."）
-如果有更新，请同时列出哪些旧决策已被本轮推翻或修改，格式：
-**Superseded:** 旧决策标题或关键词（例如"PRD 路径选择 B"）
-
-## 8. Suggested Updates to about_me.md
-（仅当出现明确、长期、稳定的用户偏好时才建议）
-
-## 9. Compact Context for Next Session
-（150-250 字一段，下次 AI 接手必读）
+## 6. Suggested Updates to about_me.md
+（仅当本轮出现明确、长期、稳定的用户偏好时才写；否则写 "No update needed."）
 
 ---
 
-以下是当前项目上下文：
+以下是这个项目的旧资料（蒸馏原料）：
 
-## Current 00_context.md
+## 旧项目说明（00_context.md）
 ${opts.context}
 
-## Current decisions.md
+## 旧决策记录（decisions.md）
 ${opts.decisions}
 
-## Latest session handoff
+## 最近一次对话总结
 ${opts.latestSession}
 `;
 }

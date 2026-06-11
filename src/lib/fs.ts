@@ -5,8 +5,10 @@
 //     projects/
 //       <slug>/
 //         project.json
-//         00_context.md
-//         decisions.md
+//         cards.md          ← 现行卡（存在 = 该项目启用现行卡模式，PRD·记忆质量升级）
+//         00_context.md     ← 旧模式主文件；现行卡模式下冻结为历史档案
+//         decisions.md      ← 旧模式主文件；现行卡模式下作为决策档案（作废条目去处）
+//         rejected.md       ← 已驳回的 AI 建议（防复提名单，现行卡模式）
 //         sessions/
 //           session_YYYY-MM-DD_HHmm.md
 
@@ -24,7 +26,8 @@ import { writeText } from "@tauri-apps/api/clipboard";
 import { invoke } from "@tauri-apps/api/tauri";
 import { join, documentDir } from "@tauri-apps/api/path";
 import type { Project, ProjectMeta, Session, InboxItem, InboxStatus, McpState } from "../types";
-import { inboxFilename } from "./inbox";
+import { inboxFilename, inboxHandoffToMarkdown, looksGarbled } from "./inbox";
+import { parseCardsStamp, stampCards } from "./cards";
 import {
   parseSessionFile,
   isSessionFile,
@@ -167,6 +170,11 @@ async function ensureSampleProject(workspace: string) {
     await join(projectDir, "decisions.md"),
     tSync("template.sampleDecisions")
   );
+  // 示例项目自带记忆卡片：新用户第一眼看到的就是卡片模式（PRD·记忆质量升级 F3）
+  await writeTextFile(
+    await join(projectDir, "cards.md"),
+    tSync("template.sampleCards", { date: new Date().toISOString().slice(0, 10) })
+  );
 }
 
 export async function listProjects(workspace: string): Promise<ProjectMeta[]> {
@@ -197,6 +205,7 @@ export async function listProjects(workspace: string): Promise<ProjectMeta[]> {
       statusLabel: meta.statusLabel ?? tSync("meta.statusProgress"),
       createdAt: meta.createdAt ?? new Date().toISOString(),
       updatedAt: meta.updatedAt ?? new Date().toISOString(),
+      mcpAutoApply: meta.mcpAutoApply ?? false,
     }));
   }
   return out;
@@ -210,9 +219,11 @@ export async function readProject(workspace: string, slug: string): Promise<Proj
 
   const ctxPath = await join(dir, "00_context.md");
   const decPath = await join(dir, "decisions.md");
+  const cardsPath = await join(dir, "cards.md");
   const sessionsDir = await join(dir, "sessions");
   const contextMarkdown = (await exists(ctxPath)) ? await readTextFile(ctxPath) : "";
   const decisionsMarkdown = (await exists(decPath)) ? await readTextFile(decPath) : "";
+  const cardsMarkdown = (await exists(cardsPath)) ? await readTextFile(cardsPath) : "";
 
   const sessions: Session[] = [];
   if (await exists(sessionsDir)) {
@@ -226,7 +237,7 @@ export async function readProject(workspace: string, slug: string): Promise<Proj
     }
     sessions.sort(compareSessionsDesc);
   }
-  return { ...meta, contextMarkdown, decisionsMarkdown, sessions };
+  return { ...meta, contextMarkdown, decisionsMarkdown, cardsMarkdown, sessions };
 }
 
 export async function saveSession(workspace: string, slug: string, raw: string): Promise<string> {
@@ -308,7 +319,10 @@ export async function detectBootstrapNeeds(
   if (slug) {
     const ctxPath = await join(workspace, "projects", slug, "00_context.md");
     const ctx = (await exists(ctxPath)) ? await readTextFile(ctxPath) : "";
-    needsContext = isMarkdownEffectivelyEmpty(ctx);
+    // 记忆卡片已存在 = 项目记忆已建好（卡片原生项目没有 00_context 正文，不该再催引导）
+    const cardsPath = await join(workspace, "projects", slug, "cards.md");
+    const cards = (await exists(cardsPath)) ? await readTextFile(cardsPath) : "";
+    needsContext = isMarkdownEffectivelyEmpty(ctx) && !cards.trim();
   }
   return { needsAboutMe, needsContext };
 }
@@ -435,6 +449,118 @@ export async function writeProjectDecisions(
   await writeTextFile(path, content);
 }
 
+// ── 现行卡（cards.md，PRD·记忆质量升级 F3）──────────────────
+
+/** 读项目现行卡；不存在返回空串（= 未启用现行卡模式）。 */
+export async function readProjectCards(workspace: string, slug: string): Promise<string> {
+  const path = await join(workspace, "projects", slug, "cards.md");
+  return (await exists(path)) ? await readTextFile(path) : "";
+}
+
+/** 写入项目现行卡（覆盖）。蒸馏入库 / 迁移重建走这里。 */
+export async function writeProjectCards(
+  workspace: string,
+  slug: string,
+  content: string
+): Promise<void> {
+  const path = await join(workspace, "projects", slug, "cards.md");
+  await writeTextFile(path, content);
+  await touchProjectUpdatedAt(workspace, slug);
+}
+
+/**
+ * 蒸馏入库时：被替换/移除的旧条目落进决策档案（decisions.md，作废章 + 日期）。
+ * 现行卡模式下 decisions.md 不再是开场注入文件，而是「档案层」——遗忘 = 归档，不是删除。
+ */
+export async function appendDecisionsArchive(
+  workspace: string,
+  slug: string,
+  items: string[],
+  today: string
+): Promise<void> {
+  if (!items.length) return;
+  const path = await join(workspace, "projects", slug, "decisions.md");
+  let existing = "";
+  if (await exists(path)) existing = await readTextFile(path);
+  const lines = items.map((it) => `- [作废 ${today}] ${it.trim()}（被新版现行卡替代）`);
+  await writeTextFile(path, existing.trimEnd() + "\n" + lines.join("\n") + "\n");
+}
+
+/** 追加一条被驳回的 AI 建议到防复提名单（rejected.md，带日期）。 */
+export async function appendRejectedSuggestion(
+  workspace: string,
+  slug: string,
+  content: string
+): Promise<void> {
+  const path = await join(workspace, "projects", slug, "rejected.md");
+  let existing = "";
+  if (await exists(path)) existing = await readTextFile(path);
+  if (!existing.trim()) existing = "# 已驳回的建议\n（记录在案，AI 之后不应再重复提这些）\n";
+  const line = `\n- [${new Date().toISOString().slice(0, 10)} 驳回] ${content.trim()}`;
+  await writeTextFile(path, existing.trimEnd() + line + "\n");
+}
+
+/** 读防复提名单；不存在返回空串。 */
+export async function readRejectedSuggestions(workspace: string, slug: string): Promise<string> {
+  const path = await join(workspace, "projects", slug, "rejected.md");
+  return (await exists(path)) ? await readTextFile(path) : "";
+}
+
+/** 信任模式开关（06-10 用户拍板）：写 project.json 的 mcpAutoApply。 */
+export async function setProjectTrustMode(
+  workspace: string,
+  slug: string,
+  on: boolean
+): Promise<void> {
+  const metaPath = await join(workspace, "projects", slug, "project.json");
+  if (!(await exists(metaPath))) throw new Error(tSync("error.projectNotFound"));
+  const meta = JSON.parse(await readTextFile(metaPath));
+  meta.mcpAutoApply = on;
+  meta.updatedAt = new Date().toISOString();
+  await writeTextFile(metaPath, JSON.stringify(meta, null, 2));
+}
+
+/**
+ * 信任模式自动入库（06-10 用户拍板，PRD·记忆质量升级）：
+ * 扫 pending 收件箱，对开了信任模式的项目、来自 MCP 通道的条目自动入库——
+ * 卡片提案直接应用（重写整理日期）+ 被替换条目归档 + 对话总结照存 + 条目移 archive(applied)。
+ * 安全阀（保持不变的纪律）：
+ *  - 只处理 sourceChannel === "mcp"（手动导入的人就在 app 前，仍走 Review）
+ *  - AI 建议（aiSuggestions）一律不自动采纳、不驳回——留在归档交接里待人看
+ *  - 提案保留的整理日期 ≠ 当前文件日期（提案产生后卡片又变过）→ 跳过，留人工 Review
+ * 返回自动入库条数。
+ */
+export async function autoApplyTrustedInbox(workspace: string): Promise<number> {
+  const pending = await listInboxItems(workspace, "pending");
+  if (!pending.length) return 0;
+  const metas = await listProjects(workspace);
+  const today = new Date().toISOString().slice(0, 10);
+  let applied = 0;
+  for (const { filename, item } of pending) {
+    if (item.sourceChannel !== "mcp") continue;
+    const meta = metas.find((m) => m.slug === item.slug);
+    if (!meta?.mcpAutoApply) continue;
+    // 纵深防御：乱码条目绝不自动入库（server 门禁之外的第二道），留给人工 Review 处置
+    if (looksGarbled(inboxHandoffToMarkdown(item.handoff))) continue;
+    const proposed = (item.handoff.proposedCards ?? "").trim();
+    if (proposed) {
+      const cur = await readProjectCards(workspace, item.slug);
+      const curStamp = parseCardsStamp(cur);
+      const propStamp = parseCardsStamp(proposed);
+      if (cur.trim() && curStamp && propStamp && curStamp.distilledOn !== propStamp.distilledOn) {
+        continue; // 日期不一致：可能盖掉别的会话的更新，降级人工
+      }
+      await writeProjectCards(workspace, item.slug, stampCards(proposed, today));
+      const sup = item.handoff.proposedCardsSuperseded ?? [];
+      if (sup.length) await appendDecisionsArchive(workspace, item.slug, sup, today);
+    }
+    await saveSession(workspace, item.slug, inboxHandoffToMarkdown(item.handoff));
+    await archiveInboxItem(workspace, filename, "applied");
+    applied++;
+  }
+  return applied;
+}
+
 export async function readAboutMe(workspace: string): Promise<string> {
   const path = await join(workspace, "about_me.md");
   return (await exists(path)) ? await readTextFile(path) : "";
@@ -445,6 +571,7 @@ export async function readContextForPrompt(workspace: string, slug: string) {
   return {
     context: proj.contextMarkdown,
     decisions: proj.decisionsMarkdown,
+    cards: proj.cardsMarkdown,
     latestSession: proj.sessions[0]?.rawMarkdown ?? "",
   };
 }
@@ -458,6 +585,8 @@ export async function readContextForStartPrompt(workspace: string, slug: string)
     aboutMe,
     context: proj.contextMarkdown,
     decisions: proj.decisionsMarkdown,
+    // 现行卡模式：开场注入 = 关于我 + cards 原文（所见即所注），context/decisions 不再进开场
+    cards: proj.cardsMarkdown,
     latestCompactContext: latestCompact,
   };
 }

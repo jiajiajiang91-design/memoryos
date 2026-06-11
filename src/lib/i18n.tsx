@@ -39,10 +39,33 @@ const DICT: Record<string, Entry> = {
   "common.dash": { zh: "—", en: "—" },
 
   // ── 欢迎屏 ─────────────────────────────────────
-  "welcome.tagline": { zh: "跨 AI 的工作记忆。", en: "Working memory across AIs." },
+  "welcome.tagline": {
+    zh: "整合多个 AI 的记忆，无痛切换",
+    en: "One memory across all your AIs — switch without losing a thing",
+  },
   "welcome.subtagline": {
-    zh: "不需要登录，不上传任何东西，数据在你自己的电脑里。",
-    en: "No login. Nothing uploaded. Your data stays on your computer.",
+    zh: "让每一次对话与思考，都成为可延续的资产。",
+    en: "Every conversation and every thought, carried forward.",
+  },
+  "welcome.feat1Title": { zh: "多个 AI，一份记忆", en: "Many AIs, one memory" },
+  "welcome.feat1Desc": {
+    zh: "ChatGPT、Claude、Kimi 换着用，项目进展和决定不丢。",
+    en: "Use ChatGPT, Claude, Kimi interchangeably — progress and decisions carry over.",
+  },
+  "welcome.feat2Title": { zh: "30 秒接上", en: "Pick up in 30 seconds" },
+  "welcome.feat2Desc": {
+    zh: "每个项目一页记忆卡片，新对话开场就知道你做到哪了。",
+    en: "One page of memory cards per project — every new chat starts informed.",
+  },
+  "welcome.feat3Title": { zh: "你说了算", en: "You stay in charge" },
+  "welcome.feat3Desc": {
+    zh: "AI 发回的更新先经你确认才保存，不会乱改你的记忆。",
+    en: "AI updates wait for your confirmation — nothing changes behind your back.",
+  },
+  "welcome.feat4Title": { zh: "普通 Markdown 文件", en: "Plain Markdown files" },
+  "welcome.feat4Desc": {
+    zh: "存在你的电脑里，任何编辑器都能打开，随时带走。",
+    en: "Stored on your computer, open in any editor, yours to take anywhere.",
   },
   "welcome.quickStart": { zh: "一键开始", en: "Quick Start" },
   "welcome.quickStartHint": { zh: "会先让你确认保存位置", en: "We'll confirm where to save first" },
@@ -51,8 +74,8 @@ const DICT: Record<string, Entry> = {
   "welcome.useExisting": { zh: "使用我已有的文件夹", en: "Use an existing folder" },
   "welcome.switchWorkspace": { zh: "切换到其他工作区", en: "Switch to another workspace" },
   "welcome.markdownNote": {
-    zh: "所有内容是普通 Markdown 文件，\n可以用任何编辑器打开、备份、迁移。",
-    en: "Everything is plain Markdown —\nopen, back up, or migrate with any editor.",
+    zh: "所有内容是普通 Markdown 文件，\n可以用任何编辑器打开、备份，换电脑直接拷走。",
+    en: "Everything is plain Markdown —\nopen it with any editor, back it up, or copy it to a new computer.",
   },
 
   // ── Setup 弹窗 ────────────────────────────────
@@ -69,13 +92,22 @@ const DICT: Record<string, Entry> = {
   "sidebar.workspace": { zh: "工作区", en: "WORKSPACE" },
   "sidebar.workspaceOverview": { zh: "工作区总览", en: "Workspace overview" },
   "sidebar.settings": { zh: "设置", en: "Settings" },
-  "sidebar.settingsToast": { zh: "设置面板 V2.1 上线", en: "Settings panel coming in V2.1" },
+  "sidebar.settingsToast": { zh: "设置功能还在做，稍后版本提供", en: "Settings are on the way" },
   "sidebar.help": { zh: "使用帮助", en: "Help" },
   "sidebar.projects": { zh: "项目", en: "PROJECTS" },
   "sidebar.coreFiles": { zh: "核心资料", en: "CORE FILES" },
   "sidebar.aboutMe": { zh: "关于我", en: "About Me" },
   "sidebar.context": { zh: "项目说明", en: "Project Context" },
   "sidebar.decisions": { zh: "决策记录", en: "Decisions" },
+  "sidebar.cards": { zh: "记忆卡片", en: "Memory Cards" },
+  "meta.trustMode": { zh: "信任模式", en: "Trust mode" },
+  "meta.trustModeDesc": {
+    zh: "AI 发回的更新自动保存，不用逐条确认；对不上的仍会先问你。",
+    en: "AI updates save automatically; anything off still asks you first.",
+  },
+  "toast.trustModeOn": { zh: "信任模式已开启——AI 发回的更新会自动保存", en: "Trust mode on — AI updates now save automatically" },
+  "toast.trustModeOff": { zh: "信任模式已关闭——更新恢复逐条确认", en: "Trust mode off — updates need your confirmation again" },
+  "toast.autoApplied": { zh: "信任模式：已自动保存 {n} 条更新", en: "Trust mode: {n} update(s) saved automatically" },
   "sidebar.sessionsCount": { zh: "对话历史 ({n})", en: "Sessions ({n})" },
   "sidebar.localMode": { zh: "本地模式", en: "Local mode" },
   "sidebar.mcpActive": { zh: "MCP · {client} · {time}", en: "MCP · {client} · {time}" },
@@ -97,7 +129,7 @@ const DICT: Record<string, Entry> = {
     en: "What's on your mind? (bug / idea / rant — all welcome)",
   },
   "feedback.textareaPlaceholder": {
-    zh: "比如：我导入 ChatGPT 的 handoff 时…",
+    zh: "比如：我导入 ChatGPT 的对话总结时…",
     en: "e.g. When I imported a handoff from ChatGPT…",
   },
   "feedback.includeStatsLabel": {
@@ -109,12 +141,12 @@ const DICT: Record<string, Entry> = {
     en: "{n} local events, earliest {date}",
   },
   "feedback.statsEmpty": {
-    zh: "本地暂无使用记录（你还没用过导入/Review 流程）",
+    zh: "本地暂无使用记录（你还没用过导入和确认流程）",
     en: "No local events yet (you haven't used the import/Review flow)",
   },
   "feedback.privacyNote": {
-    zh: "只含事件类型、长度、是否编辑等元数据，不含任何文件内容或个人信息。",
-    en: "Only event types, lengths, and edit flags — no file content or personal info.",
+    zh: "只记录操作类型和次数这类统计信息，不含任何文件内容或个人信息。",
+    en: "Only what you did and how often — never file content or personal info.",
   },
   "feedback.bodyHeading": { zh: "反馈内容", en: "Feedback" },
   "feedback.statsHeading": { zh: "使用统计", en: "Usage stats" },
@@ -139,8 +171,8 @@ const DICT: Record<string, Entry> = {
   },
   "dashboard.copyStartPrompt": { zh: "复制开始对话指令", en: "Copy start prompt" },
   "dashboard.copyStartPromptHint": {
-    zh: "开始新对话时,把这段复制给 AI,让它读取你的上下文",
-    en: "Paste this into a new AI chat so it reads your context",
+    zh: "开始新对话时，把这段复制给 AI，让它了解你和项目进展",
+    en: "Paste this into a new AI chat so it knows you and your project",
   },
   "dashboard.copyEndPrompt": { zh: "复制结束对话指令", en: "Copy end prompt" },
   "dashboard.copyEndPromptHint": {
@@ -151,16 +183,16 @@ const DICT: Record<string, Entry> = {
   "dashboard.currentState": { zh: "当前状态", en: "Current state" },
   "dashboard.totalSessions": { zh: "对话总数", en: "Sessions" },
   "dashboard.lastSession": { zh: "最近对话", en: "Last session" },
-  "dashboard.focus": { zh: "聚焦", en: "Focus" },
+  "dashboard.focus": { zh: "重点", en: "Focus" },
   "dashboard.recentSessions": { zh: "最近对话", en: "Recent sessions" },
   "dashboard.importHandoff": { zh: "导入对话总结", en: "Import handoff" },
   "dashboard.importHandoffHint": {
-    zh: "粘贴 AI 输出的对话总结，更新决策和项目说明",
-    en: "Paste the AI's handoff to update decisions and context",
+    zh: "粘贴 AI 输出的对话总结，确认后更新记忆卡片",
+    en: "Paste the AI's handoff — confirm to update your memory cards",
   },
   "dashboard.pendingBadgeHint": {
-    zh: "{n} 条待审记忆在收件箱里，点开继续 review",
-    en: "{n} pending memory item(s) in the inbox — click to review",
+    zh: "收件箱里有 {n} 条更新等你确认，点开逐条查看",
+    en: "{n} update(s) waiting in the inbox — click to go through them",
   },
   "dashboard.reviewPending": { zh: "{n} 条待审", en: "{n} pending" },
   "dashboard.noSessions": { zh: "还没有对话记录", en: "No sessions yet" },
@@ -177,24 +209,24 @@ const DICT: Record<string, Entry> = {
     en: "Let AI help draft initial content in 30 seconds",
   },
   "bootstrap.rebuildBtn": {
-    zh: "重写项目说明",
-    en: "Rewrite project context",
+    zh: "重新整理记忆",
+    en: "Re-tidy memory",
   },
   "bootstrap.rebuildBtnTip": {
-    zh: "用 AI 重新生成「项目说明」和「关于我」的初始内容",
-    en: "Regenerate 'Project Context' and 'About Me' with AI",
+    zh: "用 AI 重新整理「记忆卡片」和「关于我」。旧的项目说明会被整理进卡片，原文件保留可查。",
+    en: "Re-tidy 'Memory Cards' and 'About Me' with AI. Old project context gets folded into the cards; original files are kept.",
   },
   "bootstrap.bothEmpty": {
-    zh: "你的「关于我」和「项目说明」还是空的",
-    en: "Your 'About Me' and 'Project Context' are empty",
+    zh: "你的「关于我」和这个项目的「记忆卡片」还是空的",
+    en: "Your 'About Me' and this project's 'Memory Cards' are empty",
   },
   "bootstrap.aboutMeEmpty": {
     zh: "你的「关于我」还是空的",
     en: "Your 'About Me' is empty",
   },
   "bootstrap.contextEmpty": {
-    zh: "这个项目的「项目说明」还是空的",
-    en: "This project's 'Project Context' is empty",
+    zh: "这个项目还没有「记忆卡片」",
+    en: "This project has no 'Memory Cards' yet",
   },
   "bootstrap.modalTitle": {
     zh: "让 AI 帮你完善初始内容",
@@ -211,6 +243,25 @@ const DICT: Record<string, Entry> = {
   },
   "bootstrap.contextTitle": { zh: "项目说明", en: "Project Context" },
   "bootstrap.contextDesc": { zh: "「{name}」的初始状态", en: "Initial state for '{name}'" },
+  "bootstrap.cardsTitle": { zh: "记忆卡片", en: "Memory Cards" },
+  "bootstrap.cardsDesc": {
+    zh: "和 AI 聊几句，生成「{name}」的第一页记忆卡片——以后每次对话开场就靠它",
+    en: "A short Q&A with your AI generates the first page of memory cards for '{name}'",
+  },
+  "bootstrap.cardsPromptCopied": {
+    zh: "记忆卡片的提示词已复制。粘贴到 AI，它会问你几个问题。",
+    en: "Memory cards prompt copied. Paste it into your AI — it will ask you a few questions.",
+  },
+  "bootstrap.savedCards": { zh: "已保存「记忆卡片」", en: "'Memory Cards' saved" },
+  "bootstrap.cardsRebuildDesc": {
+    zh: "把「{name}」现有的项目说明和决策记录整理成一页记忆卡片；原文件保留为历史档案",
+    en: "Distill '{name}''s existing context and decisions into one page of Memory Cards; old files stay as archive",
+  },
+  "dashboard.migrateBannerTitle": { zh: "这个项目还没有记忆卡片", en: "This project has no Memory Cards yet" },
+  "dashboard.migrateBannerHint": {
+    zh: "整理后 AI 开场更短更准；旧资料原样保留为历史档案。也可以什么都不做——下次导入对话总结时会自动生成。",
+    en: "Tidy up for shorter, sharper session starts; legacy files stay as archive. Or do nothing — your next handoff import generates the cards automatically.",
+  },
   "bootstrap.copyPromptBtn": { zh: "点这里复制提示词，粘贴给你的 AI", en: "Copy this prompt, paste it into your AI" },
   "bootstrap.stepOneLabel": {
     zh: "第一步：复制提示词给 AI，让它问你几个问题",
@@ -240,12 +291,34 @@ const DICT: Record<string, Entry> = {
   "bootstrap.savedContext": { zh: "已保存「项目说明」", en: "'Project Context' saved" },
   "bootstrap.alreadySaved": { zh: "已保存", en: "Saved" },
 
+  // ── 整理项目记忆（迁移成记忆卡片，PRD·记忆质量升级 F3）──
+  "migrate.btn": { zh: "整理项目记忆", en: "Tidy up project memory" },
+  "migrate.btnTip": {
+    zh: "让 AI 把「项目说明 + 决策记录」整理成一页干净的记忆卡片：过期内容清掉，AI 开场读得更快更准。原文件不动，随时可查。",
+    en: "Have an AI tidy Project Context + Decisions into one clean page of memory cards. Old files stay untouched.",
+  },
+  "migrate.title": { zh: "整理项目记忆", en: "Tidy up project memory" },
+  "migrate.intro": {
+    zh: "三步：① 复制整理指令 → ② 粘贴到任意 AI，它会把旧资料整理成一页「记忆卡片」 → ③ 把整理结果粘贴回来保存。保存后，「开始 / 结束对话指令」都会改用这一页（更短、只含当前有效的内容）；原有「项目说明」「决策记录」原样保留，随时可查。",
+    en: "Three steps: ① copy the tidy-up prompt → ② run it in any AI to get one page of memory cards → ③ paste the result back and save. Start/end prompts will then use this page (shorter, current-only). Your old files stay untouched.",
+  },
+  "migrate.copyBtn": { zh: "复制整理指令", en: "Copy tidy-up prompt" },
+  "migrate.copied": { zh: "已复制", en: "Copied" },
+  "migrate.copyHint": { zh: "粘贴到 ChatGPT / Claude / Kimi 等任意 AI", en: "Paste into ChatGPT / Claude / any AI" },
+  "migrate.pasteLabel": { zh: "把 AI 整理好的记忆卡片粘贴到这里", en: "Paste the AI's memory cards here" },
+  "migrate.pastePlaceholder": { zh: "# 记忆卡片 · ……", en: "# Memory Cards · …" },
+  "migrate.charCount": { zh: "{n} 字（建议 {max} 字内）", en: "{n} chars (suggested ≤ {max})" },
+  "migrate.overBudget": { zh: "内容偏长，建议让 AI 再精简一轮", en: "a bit long — ask the AI to tighten it" },
+  "migrate.saveBtn": { zh: "保存记忆卡片", en: "Save memory cards" },
+  "migrate.savedToast": { zh: "记忆卡片已保存——以后「开始 / 结束对话指令」都会用这一页", en: "Memory cards saved — start/end prompts now use this page" },
+
   // ── Copy Prompt modal ────────────────────────
   "copyPrompt.title": { zh: "复制结束对话指令", en: "Copy end-session prompt" },
   "copyPrompt.project": { zh: "项目", en: "Project" },
-  "copyPrompt.includeLabel": { zh: "附带哪些上下文", en: "What to include" },
+  "copyPrompt.includeLabel": { zh: "附带哪些内容", en: "What to include" },
   "copyPrompt.fileContext": { zh: "项目说明", en: "Project Context" },
   "copyPrompt.fileDecisions": { zh: "决策记录", en: "Decisions" },
+  "copyPrompt.fileCards": { zh: "记忆卡片（项目记忆一页版）", en: "Memory cards (one-page memory)" },
   "copyPrompt.fileLatestSession": { zh: "最近一次对话", en: "Latest session" },
   "copyPrompt.sourceToolLabel": { zh: "在哪个 AI 里用", en: "Which AI" },
   "copyPrompt.customPlaceholder": { zh: "例如:通义、Manus", en: "e.g. Manus, Qwen" },
@@ -270,14 +343,14 @@ const DICT: Record<string, Entry> = {
     zh: "未识别到标准格式 — 内容将作为原始记录保存",
     en: "Unrecognized format — will be saved as raw session",
   },
-  "import.parseBtn": { zh: "解析", en: "Parse" },
+  "import.parseBtn": { zh: "识别", en: "Parse" },
 
   // ── Review page ──────────────────────────────
   "review.breadcrumb": { zh: "审核对话总结", en: "Review handoff" },
   "review.title": { zh: "审核这份对话总结", en: "Review this handoff" },
   "review.readyToSave": { zh: "已识别,可保存。", en: "Parsed, ready to save." },
   "review.parsedSections": { zh: "已识别的内容", en: "Parsed sections" },
-  "review.sec.metadata": { zh: "元数据", en: "Metadata" },
+  "review.sec.metadata": { zh: "基本信息", en: "Metadata" },
   "review.sec.workedOn": { zh: "做了什么", en: "What we worked on" },
   "review.sec.decisions": { zh: "关键决策", en: "Key decisions" },
   "review.sec.currentState": { zh: "当前状态", en: "Current state" },
@@ -285,9 +358,9 @@ const DICT: Record<string, Entry> = {
   "review.sec.nextActions": { zh: "下一步行动", en: "Next actions" },
   "review.sec.compactContext": { zh: "下次对话起点", en: "Compact context" },
   "review.suggestedUpdates": { zh: "建议更新", en: "Suggested updates" },
-  "review.riskLow": { zh: "安全", en: "SAFE" },
-  "review.riskMedium": { zh: "中等风险", en: "MEDIUM RISK" },
-  "review.riskHigh": { zh: "高风险", en: "HIGH RISK" },
+  "review.riskLow": { zh: "常规", en: "ROUTINE" },
+  "review.riskMedium": { zh: "请过目", en: "WORTH A LOOK" },
+  "review.riskHigh": { zh: "需要你确认", en: "YOUR CALL" },
   "review.saveSessionRow": { zh: "保存这份对话记录", en: "Save this session file" },
   "review.appendToRow": { zh: "追加到「{file}」", en: "Append to '{file}'" },
   "review.updateFileRow": { zh: "更新「{file}」", en: "Update '{file}'" },
@@ -297,7 +370,18 @@ const DICT: Record<string, Entry> = {
   },
   "review.fullFilePreview": { zh: "▸ 完整文件预览（含新增内容）", en: "▸ Full file preview (with additions)" },
   "review.newContentLabel": { zh: "↓ 新增内容", en: "↓ New additions" },
-  "review.supersededLabel": { zh: "⚠ 已过时 — 确认后自动删除", en: "⚠ Outdated — will be removed on confirm" },
+  "review.supersededLabel": { zh: "⚠ 已过时 — 保存后会被新内容替换", en: "⚠ Outdated — replaced by new content on save" },
+  "review.cardsVersionWarning": {
+    zh: "这份更新是基于较早的记忆卡片生成的——之后卡片又改动过（可能是另一个对话先保存了）。请仔细看下面的对比再勾选；不放心就丢弃这条，让 AI 重新生成。",
+    en: "This update was based on an earlier copy of the memory cards — the cards have changed since (another conversation may have saved first). Check the comparison below before ticking, or discard and let the AI redo it.",
+  },
+  "review.aiSuggestionRow": { zh: "AI 建议", en: "AI suggestion" },
+  "review.pendingBadge": { zh: "待确认", en: "pending" },
+  "review.adoptedHint": { zh: "已采纳 — 会作为你今天确认的决定写进记忆卡片", en: "Adopted — saved to the cards as a decision you confirmed today" },
+  "review.rejectedHint": { zh: "已驳回 — AI 之后不会再提这条", en: "Rejected — the AI won't suggest this again" },
+  "review.untouchedHint": { zh: "不勾也不驳回 = 只留在这份对话记录里，不写进卡片", en: "Untouched = stays in this session record only, not in the cards" },
+  "review.rejectBtn": { zh: "驳回", en: "Reject" },
+  "review.undoRejectBtn": { zh: "撤销驳回", en: "Undo reject" },
   "review.aboutMeWarning": {
     zh: "关于我是长期身份记忆,只勾选稳定且长期的偏好。",
     en: "'About Me' is long-term identity memory — only check stable, lasting preferences.",
@@ -319,17 +403,17 @@ const DICT: Record<string, Entry> = {
   "help.title": { zh: "使用帮助", en: "Help" },
   "help.heading": { zh: "跨 AI 的工作记忆", en: "Working memory across AIs" },
   "help.subheading": {
-    zh: "你在不同 AI 之间切换时（ChatGPT、Claude、Cursor…），\nMemoryOS 帮你把上下文沉淀成本地文件，换 AI 也能 30 秒续上。",
-    en: "When you switch between AIs (ChatGPT, Claude, Cursor…),\nMemoryOS lets context live in local files so any AI can resume in 30 seconds.",
+    zh: "你在不同 AI 之间切换时（ChatGPT、Claude、Cursor…），\nMemoryOS 把工作记忆存成你电脑里的文件，换一个 AI 也能 30 秒接着干。",
+    en: "When you switch between AIs (ChatGPT, Claude, Cursor…),\nMemoryOS keeps your working memory in files on your computer, so any AI picks up in 30 seconds.",
   },
   "help.stepsLabel": { zh: "四步走完一次", en: "FOUR STEPS, ONE LOOP" },
   "help.step0Title": {
-    zh: "重要：先完善「项目说明」和「关于我」",
-    en: "Important: Set up 'Project Context' and 'About Me' first",
+    zh: "先准备好「记忆卡片」和「关于我」",
+    en: "First, set up 'Memory Cards' and 'About Me'",
   },
   "help.step0Desc": {
-    zh: "新建项目后，点击主页上方的黄色提示条，用 AI 帮你 30 秒生成初始内容。这是后续所有步骤的基础——没有项目说明，AI 就不知道你在做什么，生成的对话总结也没法写入决策和记录。",
-    en: "After creating a project, tap the yellow banner on the dashboard to let AI draft your initial content in 30 seconds. This is the foundation for everything — without project context, AI won't know what you're working on, and handoff summaries can't update your decisions or records.",
+    zh: "新建项目后，点击主页上方的黄色提示条，让 AI 问你几个问题、30 秒生成这个项目的「记忆卡片」——一页纸记住项目是什么、到哪了、定过什么。这是后续所有步骤的基础：每次对话开场 AI 读的就是这页卡片。",
+    en: "After creating a project, tap the yellow banner: a short Q&A with your AI generates the project's Memory Cards — one page covering what it is, where it stands, and what's been decided. Every session starts from this page.",
   },
   "help.step1Title": { zh: "在 AI 那边聊完一轮工作", en: "Finish a round of work in any AI" },
   "help.step1Desc": {
@@ -339,19 +423,19 @@ const DICT: Record<string, Entry> = {
   "help.step2TitlePrefix": { zh: "回这里,点 ", en: "Come back here and click " },
   "help.step2Pill": { zh: "复制结束对话指令", en: "Copy end prompt" },
   "help.step2Desc": {
-    zh: "MemoryOS 会拿你这个项目的当前上下文 + 一段标准结束指令,自动写进剪贴板。",
-    en: "MemoryOS bundles your project context + a standard end prompt and copies it to your clipboard.",
+    zh: "MemoryOS 会把这个项目的当前记忆 + 一段固定的结束指令，自动复制到剪贴板。",
+    en: "MemoryOS bundles this project's current memory + a standard end prompt and copies it to your clipboard.",
   },
   "help.step3Title": { zh: "粘回那个 AI,让它整理一份总结", en: "Paste it back into the AI to summarize" },
   "help.step3Desc": {
-    zh: "AI 会用固定的 Markdown 格式输出对话总结,包括关键决策、未解决问题、下一步行动。",
-    en: "The AI outputs a structured Markdown handoff: key decisions, open questions, next actions.",
+    zh: "AI 会按固定格式输出对话总结：做了什么、你拍板的决定（带原话）、AI 的建议（待确认）、下次起点；项目有记忆卡片时，还会附上整理好的卡片新版。",
+    en: "The AI outputs a structured handoff: what happened, decisions you ratified (with quotes), AI suggestions (pending), next starting point — plus an updated version of your Memory Cards.",
   },
   "help.step4TitlePrefix": { zh: "复制总结回来,点 ", en: "Copy the handoff back, click " },
   "help.step4Pill": { zh: "+ 导入对话总结", en: "+ Import handoff" },
   "help.step4Desc": {
-    zh: "MemoryOS 会解析、分级风险、让你勾选哪些写入文件。AI 不会绕过你自动修改任何东西。",
-    en: "MemoryOS parses, risk-rates, and lets you pick what to save. Nothing is written without your check.",
+    zh: "MemoryOS 解析后让你逐条确认：卡片更新用划线对比展示旧去新来，AI 的建议默认不勾选、可一键驳回。除非你给某个项目开了「信任模式」，否则没有任何内容会未经确认写入。",
+    en: "MemoryOS parses everything for your review: card updates show a strike-through diff, AI suggestions are unchecked by default and can be rejected. Unless you enable Trust mode for a project, nothing is written without your check.",
   },
   "help.dataTitle": { zh: "你的数据", en: "Your data" },
   "help.dataBody": {
@@ -377,6 +461,11 @@ const DICT: Record<string, Entry> = {
     zh: "可以。所有文件都是普通 Markdown,任何编辑器都能打开。",
     en: "Yes. They're plain Markdown — any editor works.",
   },
+  "help.faqQ4": { zh: "「信任模式」是什么？要打开吗？", en: "What is Trust mode? Should I turn it on?" },
+  "help.faqA4": {
+    zh: "在项目页右侧可以打开。开了之后，连接的 AI 发回的更新会自动保存，不再逐条确认；内容对不上时还是会先问你。建议先用默认的逐条确认，用顺了、信得过了再开。",
+    en: "You'll find it on the right side of a project page. When on, updates from connected AIs save automatically instead of waiting for your confirmation; anything that doesn't line up still asks you first. Start with manual confirmation — turn it on once you trust the flow.",
+  },
   "help.tryStep2": { zh: "现在试试第 2 步", en: "Try step 2 now" },
 
   // ── Help drawer · 分栏切换 ───────────────────
@@ -396,8 +485,8 @@ const DICT: Record<string, Entry> = {
   },
   "mcp.redlineTitle": { zh: "先记住这一条", en: "Read this first" },
   "mcp.redline": {
-    zh: "AI 写回不会直接修改正式记忆文件。所有 handoff 都会先进入 Inbox，用户确认后才会入库。",
-    en: "AI never writes directly to your formal memory files. Every handoff lands in the Inbox first, and is only saved after you confirm it.",
+    zh: "AI 不会直接改你的记忆文件——它发回的内容先进收件箱，你确认后才保存。给某个项目打开「信任模式」后，这一步确认由 MemoryOS 自动完成（内容对不上时仍会先问你）。",
+    en: "AI never edits your memory files directly — what it sends back lands in the inbox first, and saves only after you confirm. With Trust mode on for a project, MemoryOS confirms for you (anything that doesn't line up still waits).",
   },
 
   // 块 1：Claude Desktop（推荐）
@@ -410,8 +499,8 @@ const DICT: Record<string, Entry> = {
     en: "memoryos.mcpb ships with MemoryOS (in the install folder you received, or inside the MemoryOS app directory). Open Claude Desktop → Settings → Extensions and install memoryos.mcpb. During install it asks for your MemoryOS workspace path — point it at the memory folder on your own computer, i.e. the one you're using in MemoryOS now:",
   },
   "mcp.step1Note": {
-    zh: "这个路径会作为 MEMORYOS_WORKSPACE 注入给 server，Claude 只会读取这个文件夹里的记忆。换电脑或换工作区时，记得改成对应的真实路径。",
-    en: "This path is injected as MEMORYOS_WORKSPACE for the server — Claude only reads memory from this folder. On a different computer or workspace, update it to that real path.",
+    zh: "Claude 只会读取这个文件夹里的记忆，别的什么都碰不到。换电脑或换工作区时，记得把路径改成新的。",
+    en: "Claude only reads memory from this folder — nothing else. On a new computer or workspace, update the path.",
   },
 
   "mcp.step2Title": { zh: "启用扩展，并重启 Claude Desktop", en: "Enable the extension and restart Claude Desktop" },
@@ -429,7 +518,7 @@ const DICT: Record<string, Entry> = {
     en: "This is the easiest step to miss: a disabled extension, no restart, or testing in a pre-restart conversation all make the tools show up as \"unavailable\".",
   },
 
-  "mcp.step3Title": { zh: "测试读取记忆（list_projects / get_project_memory）", en: "Test reading memory (list_projects / get_project_memory)" },
+  "mcp.step3Title": { zh: "测试：让 Claude 读取你的记忆", en: "Test: have Claude read your memory" },
   "mcp.step3Desc": {
     zh: "连接好之后，在 Claude Desktop 的新对话里让它读取你的记忆。把下面这句发给 Claude：",
     en: "Once connected, in a new Claude Desktop conversation ask it to read your memory. Send it this:",
@@ -444,7 +533,7 @@ const DICT: Record<string, Entry> = {
     en: "This step is read-only — it changes nothing. Once Claude echoes its understanding, it can pick up where you left off.",
   },
 
-  "mcp.step4Title": { zh: "保存会话 handoff（end_session / save_session_handoff）", en: "Save a session handoff (end_session / save_session_handoff)" },
+  "mcp.step4Title": { zh: "结束时：让 Claude 把总结存回来", en: "Wrapping up: have Claude save the summary back" },
   "mcp.step4Desc": {
     zh: "工作告一段落时，让 Claude 把这轮总结暂存起来。把下面这句发给 Claude：",
     en: "When you reach a stopping point, ask Claude to stage a summary of this session. Send it this:",
@@ -455,14 +544,14 @@ const DICT: Record<string, Entry> = {
     en: "We're wrapping up this session — please use MemoryOS's save_session_handoff to stage a structured summary of what we did.",
   },
   "mcp.step4Note": {
-    zh: "重要：这只会进入 MemoryOS 的 Inbox（待审收件箱），不会直接写入正式记忆。Claude 会回复「已暂存，请回桌面 app 确认入库」。",
-    en: "Important: this only enters the MemoryOS Inbox — it does not write to formal memory. Claude replies \"staged — confirm in the desktop app to save\".",
+    zh: "默认这只会进收件箱，回 MemoryOS 确认后才保存。如果这个项目开了「信任模式」，打开 MemoryOS 时会自动保存并提示你。项目还没有记忆卡片的话，这一步会顺便生成第一页。",
+    en: "By default this only enters the inbox — confirm in MemoryOS to save. With Trust mode on, MemoryOS saves it automatically and lets you know. If the project has no Memory Cards yet, this step creates the first page.",
   },
 
-  "mcp.step5Title": { zh: "回到 MemoryOS Review 确认入库", en: "Back in MemoryOS: review to save" },
+  "mcp.step5Title": { zh: "回到 MemoryOS 确认保存", en: "Back in MemoryOS: confirm to save" },
   "mcp.step5Desc": {
-    zh: "回到 MemoryOS 桌面 app，主页会出现「待审」提示。点开后你可以逐条确认、编辑或丢弃——只有确认后，内容才会写进正式 memory 文件。",
-    en: "Back in the MemoryOS desktop app, a \"pending\" badge appears on the dashboard. Open it to confirm, edit, or discard each item — only after you confirm does anything get written to your formal memory files.",
+    zh: "回到 MemoryOS，主页会出现「待审」提示。点开后逐条确认、编辑或丢弃——你确认了，内容才会写进记忆。",
+    en: "Back in MemoryOS, a \"pending\" badge appears on the dashboard. Open it to confirm, edit, or discard each item — nothing is written to memory until you say so.",
   },
 
   // 块 2：其他支持 MCP stdio 的桌面端 / 代码 Agent（高级手动配置）
@@ -495,8 +584,8 @@ const DICT: Record<string, Entry> = {
     en: "Web versions of ChatGPT, Gemini, DeepSeek, Kimi, etc. can't reach a local MCP server today. Planned for the future via a browser extension / sync — not in this release.",
   },
   "mcp.s3Interim": {
-    zh: "在那之前，这些 AI 请用「复制粘贴教程」那一栏把记忆带回来——最后都会进同一个 Inbox 等你确认。",
-    en: "Until then, use the \"Copy & paste\" tab to bring memory back from those AIs — it lands in the same Inbox, waiting for your confirmation.",
+    zh: "在那之前，这些 AI 请用「复制粘贴教程」那一栏把记忆带回来——最后都会进同一个收件箱等你确认。",
+    en: "Until then, use the \"Copy & paste\" tab to bring memory back from those AIs — it all lands in the same inbox for your confirmation.",
   },
 
   "mcp.projectFallback": { zh: "你的项目名", en: "your project" },
@@ -551,8 +640,8 @@ const DICT: Record<string, Entry> = {
 
   // ── Toasts / 状态消息 ─────────────────────────
   "toast.startPromptCopied": {
-    zh: "已复制开始对话指令。粘贴到 AI 让它读取你的上下文。",
-    en: "Start prompt copied. Paste it into your AI to load your context.",
+    zh: "已复制开始对话指令。粘贴到 AI，它就知道你是谁、做到哪了。",
+    en: "Start prompt copied. Paste it into your AI — it'll know who you are and where things stand.",
   },
   "toast.endPromptCopied": {
     zh: "已复制结束对话指令。粘贴到 AI 让它生成总结。",
@@ -619,8 +708,12 @@ const DICT: Record<string, Entry> = {
 
   // ── 初始 md 模板 (写入磁盘的脚手架文案) ──
   "template.aboutMe": {
-    zh: "# About Me\n\n（在这里写你希望所有 AI 长期记住的偏好。这是高风险文件——MemoryOS 默认不会勾选写入它。）\n",
-    en: "# About Me\n\n(Write the preferences you want every AI to remember long-term. This is a high-risk file — MemoryOS won't tick it by default.)\n",
+    zh: "# About Me\n\n（在这里写你希望所有 AI 长期记住的偏好。这份内容很重要——AI 想改它时，MemoryOS 总会先问你。）\n",
+    en: "# About Me\n\n(Write the preferences you want every AI to remember long-term. This file matters — MemoryOS always asks you before an AI changes it.)\n",
+  },
+  "template.sampleCards": {
+    zh: "# 记忆卡片 · 我的第一个项目\n> 整理于 {date}\n\n## 项目卡\n这是一个示例项目，带你走一遍 MemoryOS 的完整流程。走完后可以删掉它，建你自己的项目。\n\n## 当前状态\n- 已完成：安装 MemoryOS\n- 进行中：第一次完整流程（复制开始指令 → 在 AI 里工作 → 复制结束指令 → 导入确认）\n- 当前卡点：无\n\n## 约束与决策\n- [{date}][用户拍板] 示例：每条决策都带日期和来源；AI 的建议要经你确认才会出现在这里\n\n## 上次对话总结\n还没有对话。点上方「复制开始对话指令」，粘贴到 ChatGPT / Claude / Kimi，就是你的第一次对话。\n\n## 历史档案\n- 决策历史 → decisions.md ／ 历次对话总结 → sessions/\n（AI 需要细节时再调取，不用全读）\n",
+    en: "# Memory Cards · My First Project\n> Tidied {date}\n\n## Project\nA sample project that walks you through the full MemoryOS loop. Delete it afterwards and create your own.\n\n## Current State\n- Done: installed MemoryOS\n- In progress: first full loop (copy start prompt → work in an AI → copy end prompt → import & confirm)\n- Stuck on: nothing\n\n## Constraints & Decisions\n- [{date}][ratified] Example: every decision carries a date and a source; AI suggestions only land here after you confirm them\n\n## Last Session Summary\nNo sessions yet. Click 'Copy start prompt' above and paste it into ChatGPT / Claude — that's your first one.\n\n## Archives\n- Decision history → decisions.md / past session summaries → sessions/\n(Fetched on demand — no need to read everything.)\n",
   },
   "template.sampleContext": {
     zh: "# 项目说明\n\n这里写项目的当前状态。MemoryOS 会在你导入对话总结时,把 AI 的更新建议追加到这个文件。\n",

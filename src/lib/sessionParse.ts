@@ -2,6 +2,7 @@
 // **不依赖 Tauri**，app（fs.ts）与 Node 版 MCP server 共用同一份，保证输出逐字一致。
 
 import type { Session, SourceTool } from "../types";
+import { normalizeSourceTool } from "./sourceTools";
 
 /** sessions/ 里哪些 .md 算 session 文件（跳过 README/NOTES/INDEX/TEMPLATE）。 */
 export function isSessionFile(name: string): boolean {
@@ -36,7 +37,9 @@ export function parseSessionFile(filename: string, raw: string): Session {
     filename,
     date,
     time,
-    sourceTool: ((toolMatch?.[1] ?? "Claude") as SourceTool),
+    // 文件没写 Source Tool 时回退中性的 "AI"——不许猜成具体某家（真实 bug：Codex 写回被标成 Claude）。
+    // 归一化兜住历史文件里的机器口径（"codex"→Codex、"cowork"→Claude），显示层永远是人认识的名字。
+    sourceTool: (normalizeSourceTool(toolMatch?.[1] ?? "AI") as SourceTool),
     sessionGoal: goalMatch?.[1]?.trim() ?? filename.replace(/\.md$/, ""),
     rawMarkdown: raw,
   };

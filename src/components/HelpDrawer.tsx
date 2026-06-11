@@ -121,6 +121,7 @@ function BasicsPanel() {
 
       <h3 className="text-[12px] font-semibold uppercase tracking-wider text-ink-faint mb-3">{t("help.faqLabel")}</h3>
       <Faq q={t("help.faqQ1")} a={t("help.faqA1")} />
+      <Faq q={t("help.faqQ4")} a={t("help.faqA4")} />
       <Faq q={t("help.faqQ2")} a={t("help.faqA2")} />
       <Faq q={t("help.faqQ3")} a={t("help.faqA3")} />
     </>

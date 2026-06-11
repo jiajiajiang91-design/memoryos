@@ -1,25 +1,83 @@
-@import url("https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;600&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap");
+/* 字体全部走本机（产品承诺不联网——原 Google Fonts @import 是一处真实的隐性外联，已移除）。
+   中文：Noto Sans SC（装了用）→ 微软雅黑。展示用 Latin/数字：Bahnschrift（Win10+ 自带，DIN 风格）。 */
 
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 @layer base {
+  :root {
+    --ikb: #002fa7;
+    --ikb-soft: rgba(0, 47, 167, 0.07);
+  }
+
   html, body, #root { height: 100%; }
   body {
     @apply bg-paper text-ink font-sans antialiased;
     margin: 0;
+    text-rendering: optimizeLegibility;
+    font-feature-settings: "tnum" 0;
   }
-  ::-webkit-scrollbar { width: 12px; height: 12px; }
-  ::-webkit-scrollbar-track { background: rgba(0, 0, 0, 0.02); border-radius: 6px; }
-  ::-webkit-scrollbar-thumb { background: rgba(0, 0, 0, 0.10); border-radius: 6px; border: 2px solid transparent; background-clip: padding-box; }
-  ::-webkit-scrollbar-thumb:hover { background: rgba(0, 0, 0, 0.20); background-clip: padding-box; border: 2px solid transparent; }
+
+  /* 选区 = 品牌色（细节处的克莱因蓝） */
+  ::selection { background: var(--ikb); color: #fff; }
+
+  /* 键盘焦点环统一为 IKB；鼠标点击不出环 */
+  :focus-visible {
+    outline: 2px solid var(--ikb);
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+  :focus:not(:focus-visible) { outline: none; }
+
+  /* 滚动条：细、圆、安静 */
+  ::-webkit-scrollbar { width: 8px; height: 8px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb {
+    background: rgba(22, 24, 29, 0.12);
+    border-radius: 4px;
+    border: 2px solid transparent;
+    background-clip: padding-box;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: rgba(22, 24, 29, 0.22);
+    background-clip: padding-box;
+    border: 2px solid transparent;
+  }
 }
 
 @layer utilities {
   .animate-fade { animation: mosFade 200ms ease-out; }
   .animate-rise { animation: mosRise 200ms ease-out; }
+
+  /* 入场：上浮淡入，配 animation-delay 做错落（欢迎页用） */
+  .animate-fade-up {
+    opacity: 0;
+    animation: mosFadeUp 560ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
+  }
+
+  /* 点阵装饰（参考稿左上角的 dot grid，纯 CSS） */
+  .bg-dotgrid {
+    background-image: radial-gradient(rgba(0, 47, 167, 0.22) 1.2px, transparent 1.2px);
+    background-size: 14px 14px;
+  }
+
+  /* 极淡噪点，给大面积浅底加质感（内联 SVG，无外部资源） */
+  .bg-grain {
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/><feColorMatrix type='saturate' values='0'/><feComponentTransfer><feFuncA type='linear' slope='0.028'/></feComponentTransfer></filter><rect width='100%25' height='100%25' filter='url(%23n)'/></svg>");
+  }
+
+  /* 数字/字标的展示字体（Bahnschrift：Windows 自带的 DIN 系） */
+  .font-display {
+    font-family: "Bahnschrift", "Segoe UI", "Noto Sans SC", "Microsoft YaHei UI", sans-serif;
+    font-variation-settings: "wght" 600, "wdth" 96;
+    letter-spacing: -0.01em;
+  }
 }
 
 @keyframes mosFade { from { opacity: 0; } to { opacity: 1; } }
 @keyframes mosRise { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes mosFadeUp {
+  from { opacity: 0; transform: translateY(14px); }
+  to { opacity: 1; transform: translateY(0); }
+}

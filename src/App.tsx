@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Zap, FolderOpen, ChevronRight, X, Undo2 } from "lucide-react";
+import { Zap, FolderOpen, ChevronRight, X, Undo2, Layers, PlayCircle, ShieldCheck, FileText } from "lucide-react";
 import {
   loadWorkspace,
   selectWorkspace,
@@ -26,9 +26,16 @@ import {
   listInboxItems,
   archiveInboxItem,
   readMcpState,
+  writeProjectCards,
+  appendDecisionsArchive,
+  appendRejectedSuggestion,
+  setProjectTrustMode,
+  autoApplyTrustedInbox,
 } from "./lib/fs";
 import { ask } from "@tauri-apps/api/dialog";
 import { buildStartSessionPrompt } from "./lib/parser";
+import { stampCards, adoptSuggestionsIntoCards } from "./lib/cards";
+import { normalizeSourceTool } from "./lib/sourceTools";
 import { parsedToInboxHandoff, inboxItemToReviewState } from "./lib/inbox";
 import { logEvent } from "./lib/telemetry";
 import type { Project, ProjectMeta, ParsedHandoff, UpdateSuggestion, InboxItem, McpState } from "./types";
@@ -40,10 +47,12 @@ import ImportHandoffModal from "./components/ImportHandoffModal";
 import ReviewPage from "./components/ReviewPage";
 import FileViewerModal from "./components/FileViewerModal";
 import BootstrapModal from "./components/BootstrapModal";
+import MigrateCardsModal from "./components/MigrateCardsModal";
 import FeedbackModal from "./components/FeedbackModal";
 import NewProjectModal from "./components/NewProjectModal";
 import RenameProjectModal from "./components/RenameProjectModal";
 import LanguageToggle from "./components/LanguageToggle";
+import BrandMark from "./components/BrandMark";
 import { useT, useLang } from "./lib/i18n";
 
 // inboxFilename 存在 = 这次 review 来自某个 Inbox item，保存=applied/丢弃=discarded（移 archive）；
@@ -60,7 +69,27 @@ type ReviewState = {
   projectName: string;   // 目标项目名（review 抬头显示）
   context: string;       // 目标项目 00_context 快照（supersede 合并基线）
   decisions: string;     // 目标项目 decisions 快照
+  cards: string;         // 目标项目现行卡快照（蒸馏基线 + 版本戳并发检查）
 } | null;
+
+// 欢迎页底部卖点卡（图标 + 标题 + 一句话）
+function WelcomeFeature({
+  icon: Icon, title, desc,
+}: {
+  icon: React.ComponentType<any>;
+  title: string;
+  desc: string;
+}) {
+  return (
+    <div className="px-5 text-center">
+      <span className="w-11 h-11 rounded-xl bg-slate/[.07] inline-flex items-center justify-center mb-3">
+        <Icon size={20} strokeWidth={1.6} className="text-slate" />
+      </span>
+      <div className="text-[14px] font-semibold text-ink mb-1.5">{title}</div>
+      <div className="text-[12.5px] text-ink-soft leading-[1.7]">{desc}</div>
+    </div>
+  );
+}
 
 // 把路径 "C:\Users\xxx\Documents\MemoryOS" 转成 "Documents / MemoryOS"
 function friendlyLocation(path: string): string {
@@ -102,6 +131,15 @@ export default function App() {
   const [mcpState, setMcpState] = useState<McpState | null>(null);
   const refreshPending = async () => {
     if (!workspace) { setPendingCount(0); setMcpState(null); return; }
+    // 信任模式（06-10 用户拍板）：先把信任项目的 MCP 待审条目自动入库，再刷新计数
+    try {
+      const auto = await autoApplyTrustedInbox(workspace);
+      if (auto > 0) {
+        logEvent("auto_apply", { count: auto });
+        showToast(t("toast.autoApplied", { n: auto }));
+        setRefreshKey((k) => k + 1);
+      }
+    } catch (e) { console.warn("autoApplyTrustedInbox failed", e); }
     try { setPendingCount(await countPendingInbox(workspace)); }
     catch (e) { console.warn("countPendingInbox failed", e); }
     try { setMcpState(await readMcpState(workspace)); }
@@ -137,7 +175,25 @@ export default function App() {
       ? t("sidebar.context")
       : file === "decisions.md"
       ? t("sidebar.decisions")
+      : file === "cards.md"
+      ? t("sidebar.cards")
       : file;
+
+  // 迁移：把旧 context/decisions 蒸馏成第一版现行卡（PRD·记忆质量升级 F3 边界）
+  const [migrateCardsOpen, setMigrateCardsOpen] = useState(false);
+
+  // 打开核心资料查看/编辑（Sidebar 行与 Dashboard 卡片区「编辑」共用）
+  const openCoreFile = async (file: "about_me.md" | "00_context.md" | "decisions.md" | "cards.md") => {
+    if (!workspace) return;
+    const { readTextFile, exists } = await import("@tauri-apps/api/fs");
+    const { join } = await import("@tauri-apps/api/path");
+    const fullPath =
+      file === "about_me.md"
+        ? await join(workspace, "about_me.md")
+        : await join(workspace, "projects", currentSlug ?? "", file);
+    const content = (await exists(fullPath)) ? await readTextFile(fullPath) : "";
+    setViewingCoreFile({ filename: coreFileLabel(file), fullPath, content, rawFile: file });
+  };
 
   // 删除项目后的 5 秒撤销窗口
   const [undoableDelete, setUndoableDelete] = useState<
@@ -286,7 +342,7 @@ export default function App() {
       sourceChannel: "manual",
       // sourceClient：优先用 handoff Metadata 里实际的 Source Tool（Phase 0 已把 CopyPromptModal 选择预填进去），
       // 回退到上次复制结束指令时选的 lastSourceClient。
-      sourceClient: parsed.metadata?.["Source Tool"]?.trim() || lastSourceClient,
+      sourceClient: normalizeSourceTool(parsed.metadata?.["Source Tool"]?.trim() || lastSourceClient),
       sourcePlatform: null,
       createdAt: new Date().toISOString(),
       handoff,
@@ -310,18 +366,20 @@ export default function App() {
     let targetName = item.slug;
     let context = "";
     let decisions = "";
+    let cards = "";
     try {
       const target = await readProject(workspace, item.slug);
       targetName = target.name;
       context = target.contextMarkdown;
       decisions = target.decisionsMarkdown;
+      cards = target.cardsMarkdown;
     } catch (e) {
       console.warn("readProject for inbox item failed", item.slug, e);
     }
     const { raw: mdRaw, parsed } = inboxItemToReviewState(item);
     setReview({
       raw: mdRaw, parsed, aboutMe, inboxFilename: filename, channel: item.sourceChannel,
-      slug: item.slug, projectName: targetName, context, decisions,
+      slug: item.slug, projectName: targetName, context, decisions, cards,
     });
   };
 
@@ -337,11 +395,41 @@ export default function App() {
   const onReviewSave = async (suggestions: UpdateSuggestion[]) => {
     if (!workspace || !review) return;
     const slug = review.slug; // 锚定目标项目，绝不用滞后的 currentSlug/project
+    const today = new Date().toISOString().slice(0, 10);
     let saved = 0;
+
+    // ── 现行卡模式（PRD·记忆质量升级 F2 蒸馏）──
+    // 采纳的 AI 建议 → 升格为决策（升格日期 = 今天）；驳回的 → 防复提名单；没动的只留在归档交接里。
+    const aiSugs = suggestions.filter((x) => x.targetFile === "ai-suggestion");
+    const adopted = aiSugs.filter((x) => x.selected && !x.rejected).map((x) => x.content);
+    const cardsSug = suggestions.find((x) => x.targetFile === "cards.md");
+
+    if (cardsSug?.selected && cardsSug.content) {
+      // 一键整理：提案（+采纳的建议）落盘，重写整理日期，被替换条目盖作废章入决策档案
+      let content = adoptSuggestionsIntoCards(cardsSug.content, adopted, today, lang);
+      content = stampCards(content, today, lang);
+      await writeProjectCards(workspace, slug, content);
+      if (cardsSug.superseded?.length) {
+        await appendDecisionsArchive(workspace, slug, cardsSug.superseded, today);
+      }
+      saved++;
+    } else if (adopted.length) {
+      // 提案没勾但有采纳的建议 → 直接并进当前记忆卡片
+      let content = adoptSuggestionsIntoCards(review.cards, adopted, today, lang);
+      content = stampCards(content, today, lang);
+      await writeProjectCards(workspace, slug, content);
+      saved++;
+    }
+    for (const r of aiSugs.filter((x) => x.rejected)) {
+      await appendRejectedSuggestion(workspace, slug, r.content);
+    }
+
     for (const s of suggestions.filter((x) => x.selected)) {
       if (s.id === "save-session") {
         await saveSession(workspace, slug, review.raw);
         saved++;
+      } else if (s.targetFile === "cards.md" || s.targetFile === "ai-suggestion") {
+        continue; // 上面已处理
       } else if (s.targetFile && s.content) {
         if (s.mode === "replace") {
           if (s.targetFile === "00_context.md") await writeProjectContext(workspace, slug, s.content);
@@ -386,33 +474,41 @@ export default function App() {
     const secondaryLabel = hasWorkspace ? t("welcome.switchWorkspace") : t("welcome.useExisting");
 
     return (
-      <div className="min-h-screen flex items-center justify-center bg-paper px-12 relative">
+      <div className="min-h-screen flex flex-col items-center justify-center relative overflow-hidden bg-gradient-to-b from-[#F8FAFE] via-[#F2F5FB] to-[#EAEEF6] px-12 py-10">
         {/* 右上角语言切换 */}
-        <div className="absolute top-5 right-6">
+        <div className="absolute top-5 right-6 z-10">
           <LanguageToggle />
         </div>
+        {/* 背景：柔光 + 极淡噪点 + 左上点阵（参考稿氛围，全部纯 CSS/SVG 不联网） */}
+        <div className="absolute inset-0 bg-grain pointer-events-none" />
+        <div className="absolute -top-28 -left-28 w-[26rem] h-[26rem] rounded-full bg-slate/[.05] blur-3xl pointer-events-none" />
+        <div className="absolute -bottom-36 -right-28 w-[30rem] h-[30rem] rounded-full bg-slate/[.06] blur-3xl pointer-events-none" />
+        <div className="absolute top-[16%] left-[12%] w-24 h-20 bg-dotgrid opacity-40 pointer-events-none" />
 
-        <div className="w-[420px] text-center">
-          <div className="text-[40px] leading-none font-semibold mb-4 tracking-[-0.02em]">
-            <span className="text-slate font-normal mr-3">◇</span>MemoryOS
+        <div className="relative w-full max-w-[560px] text-center">
+          {/* Logo：渐变菱形 + 白色四角星光（按参考稿重做）+ 字标 */}
+          <div className="flex items-center justify-center gap-3 mb-5 animate-fade-up">
+            <BrandMark size={64} className="drop-shadow-[0_10px_22px_rgba(0,47,167,0.30)]" />
+            <span className="font-display text-[44px] font-bold tracking-[-0.02em] text-ink">MemoryOS</span>
           </div>
-          <p className="text-[15px] text-ink-soft leading-relaxed mb-2">
+
+          <h1 className="text-[22px] font-semibold tracking-[-0.01em] text-ink mb-3 animate-fade-up [animation-delay:80ms]">
             {t("welcome.tagline")}
-          </p>
-          <p className="text-[13px] text-ink-faint leading-relaxed mb-10">
+          </h1>
+          <p className="text-[14px] text-ink-soft leading-relaxed mb-10 whitespace-pre-line animate-fade-up [animation-delay:150ms]">
             {t("welcome.subtagline")}
           </p>
 
-          <button
-            onClick={primary.onClick}
-            className="w-full h-14 px-5 bg-slate text-white rounded-lg flex items-center justify-center gap-2.5 text-[15px] font-medium hover:opacity-90 transition-opacity shadow-[0_1px_2px_rgba(0,0,0,0.04)]"
-          >
-            <Zap size={18} strokeWidth={1.5} />
-            {primary.label}
-          </button>
-          <p className="text-[12px] text-ink-faint mt-2">{primary.hint}</p>
+          <div className="animate-fade-up [animation-delay:220ms]">
+            <button
+              onClick={primary.onClick}
+              className="w-[400px] max-w-full mx-auto h-[52px] px-5 bg-slate text-white rounded-xl flex items-center justify-center gap-2.5 text-[15px] font-medium hover:opacity-90 hover:-translate-y-px transition-all shadow-ikb"
+            >
+              <Zap size={17} strokeWidth={1.5} />
+              {primary.label}
+            </button>
+            <p className="text-[12px] text-ink-faint mt-2.5">{primary.hint}</p>
 
-          <div className="mt-8 text-[13px]">
             <button
               onClick={async () => {
                 if (hasWorkspace) {
@@ -425,16 +521,20 @@ export default function App() {
                 const w = await selectWorkspace(t("picker.selectWorkspace"));
                 if (w) setWorkspace(w);
               }}
-              className="text-ink-soft hover:text-slate transition-colors inline-flex items-center gap-1.5"
+              className="mt-6 h-11 px-6 mx-auto rounded-xl bg-surface/80 border border-hairline text-[13px] text-ink-soft hover:text-slate hover:border-slate/40 hover:-translate-y-px transition-all inline-flex items-center gap-2 shadow-btn hover:shadow-btn-hover"
             >
-              <FolderOpen size={14} strokeWidth={1.5} />
+              <FolderOpen size={15} strokeWidth={1.5} />
               {secondaryLabel}
             </button>
           </div>
+        </div>
 
-          <p className="text-[11px] text-ink-faint mt-12 leading-relaxed whitespace-pre-line">
-            {t("welcome.markdownNote")}
-          </p>
+        {/* 底部卖点四联卡：跨 AI 记忆是主叙事 */}
+        <div className="relative w-full max-w-[1040px] mt-14 bg-surface/75 backdrop-blur rounded-2xl shadow-panel px-4 py-7 grid grid-cols-4 divide-x divide-hairline/70 animate-fade-up [animation-delay:320ms]">
+          <WelcomeFeature icon={Layers} title={t("welcome.feat1Title")} desc={t("welcome.feat1Desc")} />
+          <WelcomeFeature icon={PlayCircle} title={t("welcome.feat2Title")} desc={t("welcome.feat2Desc")} />
+          <WelcomeFeature icon={ShieldCheck} title={t("welcome.feat3Title")} desc={t("welcome.feat3Desc")} />
+          <WelcomeFeature icon={FileText} title={t("welcome.feat4Title")} desc={t("welcome.feat4Desc")} />
         </div>
 
         {setupOpen && (
@@ -520,12 +620,13 @@ export default function App() {
   }
 
   return (
-    <div className="h-screen flex bg-paper min-w-[1280px]">
+    <div className="h-screen flex bg-paper min-w-[1280px] p-3 gap-3">
       <Sidebar
         workspace={workspace}
         projects={projects}
         currentSlug={currentSlug}
         sessionsCount={project?.sessions.length ?? 0}
+        hasCards={!!project?.cardsMarkdown.trim()}
         mcpState={mcpState}
         onSelectProject={(slug) => { setCurrentSlug(slug); setReview(null); }}
         onNewProject={() => setNewProjectOpen(true)}
@@ -566,17 +667,7 @@ export default function App() {
           setCurrentSlug(null);
           setProject(null);
         }}
-        onViewCoreFile={async (file) => {
-          if (!workspace) return;
-          const { readTextFile, exists } = await import("@tauri-apps/api/fs");
-          const { join } = await import("@tauri-apps/api/path");
-          const fullPath =
-            file === "about_me.md"
-              ? await join(workspace, "about_me.md")
-              : await join(workspace, "projects", currentSlug ?? "", file);
-          const content = (await exists(fullPath)) ? await readTextFile(fullPath) : "";
-          setViewingCoreFile({ filename: coreFileLabel(file), fullPath, content, rawFile: file });
-        }}
+        onViewCoreFile={openCoreFile}
       />
 
       {review ? (
@@ -587,6 +678,7 @@ export default function App() {
           currentContext={review.context}
           currentDecisions={review.decisions}
           currentAboutMe={review.aboutMe}
+          currentCards={review.cards}
           onCancel={onReviewCancel}
           onSave={onReviewSave}
           onDiscard={review.inboxFilename ? onReviewDiscard : undefined}
@@ -616,6 +708,16 @@ export default function App() {
           onReviewPending={onReviewPending}
           bootstrapNeeds={bootstrapNeeds}
           onOpenBootstrap={() => setBootstrapOpen(true)}
+          onMigrateCards={() => setMigrateCardsOpen(true)}
+          onEditCards={() => openCoreFile("cards.md")}
+          onToggleTrustMode={async () => {
+            if (!workspace || !project) return;
+            const next = !project.mcpAutoApply;
+            await setProjectTrustMode(workspace, project.slug, next);
+            logEvent("trust_mode_toggle", { slug: project.slug, on: next });
+            setRefreshKey((k) => k + 1);
+            showToast(next ? t("toast.trustModeOn") : t("toast.trustModeOff"));
+          }}
           onOpenSessionsDir={async () => {
             if (!workspace || !project) return;
             const { createDir, exists } = await import("@tauri-apps/api/fs");
@@ -645,6 +747,19 @@ export default function App() {
       )}
       {modal === "import" && (
         <ImportHandoffModal onClose={() => setModal(null)} onParsed={onParsed} />
+      )}
+      {migrateCardsOpen && project && workspace && (
+        <MigrateCardsModal
+          workspace={workspace}
+          project={project}
+          onClose={() => setMigrateCardsOpen(false)}
+          onSaved={() => {
+            setMigrateCardsOpen(false);
+            setRefreshKey((k) => k + 1);
+            logEvent("cards.migrated", { slug: project.slug });
+            showToast(t("migrate.savedToast"));
+          }}
+        />
       )}
       {modal === "feedback" && (
         <FeedbackModal onClose={() => setModal(null)} onToast={showToast} />
@@ -677,6 +792,7 @@ export default function App() {
             if (f === "about_me.md") await writeAboutMe(workspace, newContent);
             else if (f === "00_context.md") await writeProjectContext(workspace, currentSlug, newContent);
             else if (f === "decisions.md") await writeProjectDecisions(workspace, currentSlug, newContent);
+            else if (f === "cards.md") await writeProjectCards(workspace, currentSlug, newContent);
             setViewingCoreFile(null);
             setRefreshKey((k) => k + 1);
             showToast(t("toast.fileSaved", { name: viewingCoreFile.filename }));

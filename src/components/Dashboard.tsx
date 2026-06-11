@@ -1,9 +1,13 @@
 import { useRef } from "react";
-import { Copy, Plus, Play, Sparkles, ChevronRight, Inbox } from "lucide-react";
+import {
+  Copy, Plus, Play, Sparkles, ChevronRight, Inbox, Pencil,
+  LayoutGrid, Briefcase, Activity, ShieldCheck, MessagesSquare, Archive, FileText,
+} from "lucide-react";
 import type { Project } from "../types";
 import MetadataPanel from "./MetadataPanel";
 import HelpBanner from "./HelpBanner";
 import { tintFor } from "../lib/sourceTools";
+import MarkdownLite from "./MarkdownLite";
 import { useT } from "../lib/i18n";
 
 type Props = {
@@ -18,6 +22,12 @@ type Props = {
   onOpenSessionsDir: () => void;
   bootstrapNeeds: { needsAboutMe: boolean; needsContext: boolean };
   onOpenBootstrap: () => void;
+  /** 旧项目「升级为现行卡」入口（无 cards.md 时显示，PRD·记忆质量升级 F3 迁移）。 */
+  onMigrateCards: () => void;
+  /** 正文记忆卡片区的「编辑」→ 打开 cards.md 查看/编辑。 */
+  onEditCards: () => void;
+  /** 信任模式开关（06-10 用户拍板）。 */
+  onToggleTrustMode: () => void;
   /** Inbox 里 status=pending 的条数；>0 时显示「待审」入口。 */
   pendingInboxCount: number;
   /** 点「待审」打开最早一条 pending 的 review。 */
@@ -37,7 +47,7 @@ export default function Dashboard(props: Props) {
 
   return (
     <>
-      <div className="flex-1 flex flex-col min-w-0 bg-paper">
+      <div className="flex-1 flex flex-col min-w-0 bg-surface rounded-2xl shadow-panel overflow-hidden">
         <div ref={scrollRef} className="flex-1 overflow-y-auto">
           <div className="pl-16 pr-6 pt-12 max-w-[808px]">
             <div className="text-xs text-ink-soft mb-12">
@@ -59,7 +69,7 @@ export default function Dashboard(props: Props) {
             {(props.bootstrapNeeds.needsAboutMe || props.bootstrapNeeds.needsContext) && (
               <button
                 onClick={props.onOpenBootstrap}
-                className="w-full mb-6 px-4 py-3 bg-[#FFF5E1] border border-[#EAD9A8] rounded-lg flex items-center gap-3 hover:bg-[#FFEFD0] transition-colors text-left"
+                className="w-full mb-6 px-4 py-3 bg-[#FFF5E1] border border-[#EAD9A8] rounded-xl flex items-center gap-3 hover:bg-[#FFEFD0] transition-colors text-left"
               >
                 <Sparkles size={18} strokeWidth={1.5} className="text-[#A37A1C] shrink-0" />
                 <div className="flex-1 min-w-0">
@@ -70,10 +80,26 @@ export default function Dashboard(props: Props) {
               </button>
             )}
 
+            {/* 旧项目转化引导（2026-06-11 拍板：每步操作引导旧格式转向记忆卡片）：
+                有旧资料但没卡片 → 黄色横幅进「整理项目记忆」。needsContext 时上面的引导横幅已覆盖。 */}
+            {!project.cardsMarkdown.trim() && !props.bootstrapNeeds.needsContext && (
+              <button
+                onClick={props.onMigrateCards}
+                className="w-full mb-6 px-4 py-3 bg-[#FFF5E1] border border-[#EAD9A8] rounded-xl flex items-center gap-3 hover:bg-[#FFEFD0] transition-colors text-left"
+              >
+                <Sparkles size={18} strokeWidth={1.5} className="text-[#A37A1C] shrink-0" />
+                <div className="flex-1 min-w-0">
+                  <div className="text-[14px] font-medium text-ink">{t("dashboard.migrateBannerTitle")}</div>
+                  <div className="text-[12px] text-ink-soft mt-0.5">{t("dashboard.migrateBannerHint")}</div>
+                </div>
+                <ChevronRight size={16} strokeWidth={1.5} className="text-ink-soft shrink-0" />
+              </button>
+            )}
+
             <div className="mb-10 flex gap-3 flex-wrap items-center">
               <button
                 onClick={props.onCopyStartPrompt}
-                className="h-10 px-4 rounded-md bg-surface border border-slate text-slate font-medium text-sm inline-flex items-center gap-2 hover:bg-surface-soft transition-colors"
+                className="h-10 px-4 rounded-lg bg-surface border border-hairline shadow-btn text-ink font-medium text-sm inline-flex items-center gap-2 hover:border-slate/40 hover:text-slate hover:-translate-y-px hover:shadow-btn-hover transition-all"
                 title={t("dashboard.copyStartPromptHint")}
               >
                 <Play size={16} strokeWidth={1.5} />
@@ -81,7 +107,7 @@ export default function Dashboard(props: Props) {
               </button>
               <button
                 onClick={props.onCopyPrompt}
-                className="h-10 px-4 rounded-md bg-slate text-white font-medium text-sm inline-flex items-center gap-2 hover:opacity-90 transition-opacity"
+                className="h-10 px-4 rounded-lg bg-surface border border-hairline shadow-btn text-ink font-medium text-sm inline-flex items-center gap-2 hover:border-slate/40 hover:text-slate hover:-translate-y-px hover:shadow-btn-hover transition-all"
                 title={t("dashboard.copyEndPromptHint")}
               >
                 <Copy size={16} strokeWidth={1.5} />
@@ -90,7 +116,7 @@ export default function Dashboard(props: Props) {
               {props.pendingInboxCount > 0 && (
                 <button
                   onClick={props.onReviewPending}
-                  className="ml-auto h-10 px-3 rounded-md bg-[#FFF5E1] border border-[#EAD9A8] text-[#A37A1C] font-medium text-sm inline-flex items-center gap-2 hover:bg-[#FFEFD0] transition-colors"
+                  className="ml-auto h-10 px-4 rounded-lg bg-[#FFF5E1] border border-[#EAD9A8] text-[#A37A1C] font-medium text-sm inline-flex items-center gap-2 hover:bg-[#FFEFD0] transition-colors"
                   title={t("dashboard.pendingBadgeHint", { n: props.pendingInboxCount })}
                 >
                   <Inbox size={16} strokeWidth={1.5} />
@@ -99,7 +125,7 @@ export default function Dashboard(props: Props) {
               )}
               <button
                 onClick={props.onImport}
-                className={`${props.pendingInboxCount > 0 ? "" : "ml-auto "}h-10 px-4 rounded-md bg-slate text-white font-medium text-sm inline-flex items-center gap-2 hover:opacity-90 transition-opacity`}
+                className={`${props.pendingInboxCount > 0 ? "" : "ml-auto "}h-10 px-5 rounded-lg bg-slate text-white font-medium text-sm inline-flex items-center gap-2 shadow-ikb hover:opacity-90 hover:-translate-y-px transition-all`}
                 title={t("dashboard.importHandoffHint")}
               >
                 <Plus size={16} strokeWidth={1.5} />
@@ -109,47 +135,97 @@ export default function Dashboard(props: Props) {
 
             <hr className="border-hairline mb-6" />
 
-            <section id="sec-goal" className="mb-10">
-              <h2 className="text-lg font-semibold tracking-[-0.01em] mb-4">{t("dashboard.currentGoal")}</h2>
-              {project.currentGoal ? (
-                <p className="text-[15px] leading-[1.75] mb-4">{project.currentGoal}</p>
-              ) : project.sessions.length > 0 ? (
-                <p className="text-[15px] leading-[1.75] mb-4 text-ink-soft">
-                  {project.sessions[0].sessionGoal}
-                </p>
-              ) : null}
-              {project.currentGoalBullets.length > 0 && (
-                <ul className="text-[15px] leading-[1.75] list-disc pl-5 mb-6">
-                  {project.currentGoalBullets.map((b, i) => <li key={i}>{b}</li>)}
-                </ul>
-              )}
-              <div className="flex items-center gap-8 text-[13px] flex-wrap">
-                <div className="inline-flex items-center gap-3">
-                  <span className="text-ink-soft">{t("dashboard.totalSessions")}</span>
-                  <span className="font-medium">{project.sessions.length}</span>
+            {project.cardsMarkdown.trim() ? (
+              // ── 记忆卡片模式：正文直接展示卡片本体（所见即所注，PRD·记忆质量升级 F3）──
+              <section id="sec-goal" className="mb-10">
+                <div className="flex items-center gap-2.5 mb-1">
+                  <LayoutGrid size={17} strokeWidth={1.6} className="text-slate" />
+                  <h2 className="text-lg font-semibold tracking-[-0.01em]">{t("sidebar.cards")}</h2>
+                  <button
+                    onClick={props.onEditCards}
+                    className="ml-auto text-[13px] text-slate hover:opacity-75 transition-opacity inline-flex items-center gap-1"
+                  >
+                    <Pencil size={13} strokeWidth={1.5} />
+                    {t("review.editBtn")}
+                  </button>
                 </div>
-                {project.sessions.length > 0 && (
+                <div className="grid grid-cols-2 gap-3 mt-3">
+                  {splitCardsSections(project.cardsMarkdown).map((c, i) => {
+                    const CardIcon = iconForCard(c.title);
+                    return (
+                      <div
+                        key={i}
+                        className={`border border-hairline/70 rounded-2xl p-4 bg-surface-soft/70 hover:border-slate/25 transition-colors ${i === 0 ? "col-span-2" : ""}`}
+                      >
+                        <div className="flex items-center gap-2 text-[13px] font-semibold mb-2">
+                          <CardIcon size={15} strokeWidth={1.7} className="text-slate shrink-0" />
+                          {c.title}
+                        </div>
+                        <div className="text-[13px] leading-[1.7] text-ink-soft [&_strong]:font-semibold [&_ul]:list-disc [&_ul]:pl-5 [&_ul]:my-1.5 [&_li]:my-0.5">
+                          <MarkdownLite source={c.body} />
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+                <div className="flex items-center gap-8 text-[13px] flex-wrap mt-5">
                   <div className="inline-flex items-center gap-3">
-                    <span className="text-ink-soft">{t("dashboard.lastSession")}</span>
-                    <span className="font-medium">{project.sessions[0].date} · {project.sessions[0].sourceTool}</span>
+                    <span className="text-ink-soft">{t("dashboard.totalSessions")}</span>
+                    <span className="font-medium">{project.sessions.length}</span>
                   </div>
-                )}
-                {project.focus && (
-                  <div className="inline-flex items-center gap-3">
-                    <span className="text-ink-soft">{t("dashboard.focus")}</span>
-                    <span>{project.focus}</span>
-                  </div>
-                )}
-              </div>
-            </section>
-
-            {extractCurrentState(project.contextMarkdown) && (
-              <section id="sec-state" className="mb-10">
-                <h2 className="text-lg font-semibold tracking-[-0.01em] mb-4">{t("dashboard.currentState")}</h2>
-                <div className="text-[14px] leading-[1.75] [&_strong]:font-semibold [&_ul]:list-disc [&_ul]:pl-5 [&_ul]:my-1.5 [&_li]:my-0.5">
-                  <MarkdownLite source={extractCurrentState(project.contextMarkdown)!} />
+                  {project.sessions.length > 0 && (
+                    <div className="inline-flex items-center gap-3">
+                      <span className="text-ink-soft">{t("dashboard.lastSession")}</span>
+                      <span className="font-medium">{project.sessions[0].date} · {project.sessions[0].sourceTool}</span>
+                    </div>
+                  )}
                 </div>
               </section>
+            ) : (
+              <>
+                <section id="sec-goal" className="mb-10">
+                  <h2 className="text-lg font-semibold tracking-[-0.01em] mb-4">{t("dashboard.currentGoal")}</h2>
+                  {project.currentGoal ? (
+                    <p className="text-[15px] leading-[1.75] mb-4">{project.currentGoal}</p>
+                  ) : project.sessions.length > 0 ? (
+                    <p className="text-[15px] leading-[1.75] mb-4 text-ink-soft">
+                      {project.sessions[0].sessionGoal}
+                    </p>
+                  ) : null}
+                  {project.currentGoalBullets.length > 0 && (
+                    <ul className="text-[15px] leading-[1.75] list-disc pl-5 mb-6">
+                      {project.currentGoalBullets.map((b, i) => <li key={i}>{b}</li>)}
+                    </ul>
+                  )}
+                  <div className="flex items-center gap-8 text-[13px] flex-wrap">
+                    <div className="inline-flex items-center gap-3">
+                      <span className="text-ink-soft">{t("dashboard.totalSessions")}</span>
+                      <span className="font-medium">{project.sessions.length}</span>
+                    </div>
+                    {project.sessions.length > 0 && (
+                      <div className="inline-flex items-center gap-3">
+                        <span className="text-ink-soft">{t("dashboard.lastSession")}</span>
+                        <span className="font-medium">{project.sessions[0].date} · {project.sessions[0].sourceTool}</span>
+                      </div>
+                    )}
+                    {project.focus && (
+                      <div className="inline-flex items-center gap-3">
+                        <span className="text-ink-soft">{t("dashboard.focus")}</span>
+                        <span>{project.focus}</span>
+                      </div>
+                    )}
+                  </div>
+                </section>
+
+                {extractCurrentState(project.contextMarkdown) && (
+                  <section id="sec-state" className="mb-10">
+                    <h2 className="text-lg font-semibold tracking-[-0.01em] mb-4">{t("dashboard.currentState")}</h2>
+                    <div className="text-[14px] leading-[1.75] [&_strong]:font-semibold [&_ul]:list-disc [&_ul]:pl-5 [&_ul]:my-1.5 [&_li]:my-0.5">
+                      <MarkdownLite source={extractCurrentState(project.contextMarkdown)!} />
+                    </div>
+                  </section>
+                )}
+              </>
             )}
 
             <hr className="border-hairline mb-6" />
@@ -199,9 +275,32 @@ export default function Dashboard(props: Props) {
 
       </div>
 
-      <MetadataPanel project={project} scrollRef={scrollRef} onOpenBootstrap={props.onOpenBootstrap} />
+      <MetadataPanel project={project} scrollRef={scrollRef} onOpenBootstrap={props.onOpenBootstrap} onMigrateCards={props.onMigrateCards} onToggleTrustMode={props.onToggleTrustMode} />
     </>
   );
+}
+
+/** 卡片标题 → 图标（中英标题都认；认不出用文档图标）。 */
+function iconForCard(title: string): React.ComponentType<any> {
+  const tl = title.toLowerCase();
+  if (title.includes("项目") || tl.includes("project")) return Briefcase;
+  if (title.includes("状态") || tl.includes("state")) return Activity;
+  if (title.includes("决策") || tl.includes("decision")) return ShieldCheck;
+  if (title.includes("总结") || tl.includes("summary") || tl.includes("session")) return MessagesSquare;
+  if (title.includes("档案") || tl.includes("archive")) return Archive;
+  return FileText;
+}
+
+/** 把 cards.md 按 `## ` 切成卡片（跳过 `# 标题` 和 `> 整理于` 行）。 */
+function splitCardsSections(md: string): { title: string; body: string }[] {
+  const out: { title: string; body: string }[] = [];
+  const parts = md.split(/\n(?=##\s)/);
+  for (const part of parts) {
+    const m = part.match(/^##\s+(.+?)\s*\n([\s\S]*)$/);
+    if (!m) continue; // 第一块是 # 标题 + 版本戳，跳过
+    out.push({ title: m[1].trim(), body: m[2].trim() });
+  }
+  return out;
 }
 
 function extractCurrentState(md: string): string | null {
@@ -213,52 +312,3 @@ function extractCurrentState(md: string): string | null {
   return dedented || null;
 }
 
-function MarkdownLite({ source }: { source: string }) {
-  const blocks: React.ReactNode[] = [];
-  const lines = source.split("\n");
-  let listItems: { indent: number; html: string }[] = [];
-
-  const flushList = () => {
-    if (!listItems.length) return;
-    blocks.push(
-      <ul key={blocks.length}>
-        {listItems.map((it, i) => (
-          <li key={i} style={{ marginLeft: it.indent * 16 }} dangerouslySetInnerHTML={{ __html: it.html }} />
-        ))}
-      </ul>
-    );
-    listItems = [];
-  };
-
-  const renderInline = (s: string) =>
-    s
-      .replace(/&/g, "&amp;")
-      .replace(/</g, "&lt;")
-      .replace(/>/g, "&gt;")
-      .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
-      .replace(/`([^`]+)`/g, '<code class="px-1 py-0.5 rounded bg-surface-soft text-[12px]">$1</code>');
-
-  for (const raw of lines) {
-    const line = raw.trimEnd();
-    const listMatch = line.match(/^(\s*)[-*]\s+(.+)/);
-    const headMatch = line.match(/^(#{1,6})\s+(.+)/);
-    if (listMatch) {
-      const indent = Math.floor(listMatch[1].length / 2);
-      listItems.push({ indent, html: renderInline(listMatch[2]) });
-    } else if (headMatch) {
-      flushList();
-      const level = headMatch[1].length;
-      const size = level <= 2 ? "text-[15px]" : "text-[14px]";
-      blocks.push(
-        <div key={blocks.length} className={`${size} font-semibold mt-3 mb-1`} dangerouslySetInnerHTML={{ __html: renderInline(headMatch[2]) }} />
-      );
-    } else if (line.trim()) {
-      flushList();
-      blocks.push(<p key={blocks.length} className="my-2" dangerouslySetInnerHTML={{ __html: renderInline(line) }} />);
-    } else {
-      flushList();
-    }
-  }
-  flushList();
-  return <>{blocks}</>;
-}

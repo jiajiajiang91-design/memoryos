@@ -7,6 +7,7 @@ import * as fsp from "node:fs/promises";
 import * as path from "node:path";
 import { randomUUID } from "node:crypto";
 import { parsedToInboxHandoff, inboxFilename } from "../../src/lib/inbox";
+import { normalizeSourceTool } from "../../src/lib/sourceTools";
 import type { InboxItem, ParsedHandoff } from "../../src/types";
 
 export type SaveHandoffInput = {
@@ -21,6 +22,10 @@ export type SaveHandoffInput = {
   suggestedDecisionsUpdate?: string;
   suggestedAboutMeUpdate?: string;
   compactContext: string;
+  // 现行卡模式（PRD·记忆质量升级 F1）：来源标记 + 六卡更新提案
+  aiSuggestions?: string;
+  proposedCards?: string;
+  proposedCardsSuperseded?: string[];
 };
 
 /** 校验 targetReal 真实路径仍在 wsReal（workspace 真实路径）内，拒 `..`/symlink 逃逸。 */
@@ -38,8 +43,15 @@ export function buildInboxItem(
   slug: string,
   sourceClient: string
 ): InboxItem {
+  // 来源标记以 MCP 握手的 clientInfo.name 为准：AI 不填/乱填 Source Tool 时，
+  // 用真实客户端名兜底（真实 bug：Codex 没填 → 落盘文件被解析成默认值"Claude"）。
+  // AI 自填的值也归一（模型常写小写 "codex"），显示层永远是人认识的工具名。
+  const metadata = { ...(input.metadata ?? {}) };
+  metadata["Source Tool"] = normalizeSourceTool(
+    metadata["Source Tool"]?.trim() || sourceClient || "MCP Client"
+  );
   const parsed: ParsedHandoff = {
-    metadata: input.metadata ?? {},
+    metadata,
     whatWeWorkedOn: input.whatWeWorkedOn,
     keyDecisions: input.keyDecisions,
     currentState: input.currentState,
@@ -49,6 +61,9 @@ export function buildInboxItem(
     suggestedDecisionsUpdate: input.suggestedDecisionsUpdate ?? "",
     suggestedAboutMeUpdate: input.suggestedAboutMeUpdate ?? "",
     compactContext: input.compactContext,
+    aiSuggestions: input.aiSuggestions ?? "",
+    proposedCards: input.proposedCards ?? "",
+    proposedCardsSuperseded: input.proposedCardsSuperseded ?? [],
   };
   return {
     id: randomUUID(),

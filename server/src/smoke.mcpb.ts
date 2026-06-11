@@ -172,6 +172,21 @@ async function run() {
       "bundled pull reads latest compact context"
     );
 
+    // 契约强制：缺 proposedCards 被退回（不写盘）
+    const bounce = await client.callTool({
+      name: "save_session_handoff",
+      arguments: {
+        project: "bundle",
+        whatWeWorkedOn: "Verified MCPB package",
+        keyDecisions: "Decision: use bundled server entry",
+        currentState: "Phase 4 smoke running",
+        openQuestions: "None",
+        nextActions: "Report Phase 4",
+        compactContext: "MCPB package can start the bundled server and write Inbox.",
+      },
+    });
+    ok((bounce as any).isError === true, "bundled save without proposedCards is bounced (contract enforced)");
+
     const save = await client.callTool({
       name: "save_session_handoff",
       arguments: {
@@ -182,6 +197,8 @@ async function run() {
         openQuestions: "None",
         nextActions: "Report Phase 4",
         compactContext: "MCPB package can start the bundled server and write Inbox.",
+        proposedCards:
+          "# Memory Cards · Bundle Project\n> Tidied 2026-06-03\n\n## Project\nMCPB smoke.\n\n## Current State\n- In progress: phase 4\n\n## Constraints & Decisions\n- [2026-06-03][ratified] bundled entry\n\n## Last Session Summary\nsmoke.\n\n## Archives\n- decisions.md\n",
       },
     });
     ok((save as any).structuredContent?.staged === true, "bundled save_session_handoff stages item");

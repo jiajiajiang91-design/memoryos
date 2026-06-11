@@ -3,6 +3,7 @@ import { X, FileText, ExternalLink, Pencil } from "lucide-react";
 import { open as shellOpen } from "@tauri-apps/api/shell";
 import type { SourceTool } from "../types";
 import { tintFor } from "../lib/sourceTools";
+import MarkdownLite from "./MarkdownLite";
 import { useT } from "../lib/i18n";
 
 type SessionMeta = {
@@ -113,9 +114,10 @@ export default function FileViewerModal({
               className="w-full h-full min-h-[300px] bg-paper border border-hairline rounded-md p-4 font-mono text-[13px] leading-[1.75] text-ink resize-y focus:outline-none focus:border-slate transition-colors"
             />
           ) : content ? (
-            <pre className="text-[14px] leading-[1.75] whitespace-pre-wrap font-sans text-ink">
-              {content}
-            </pre>
+            // 查看 = 渲染给人看；编辑才是 Markdown 原文
+            <div className="text-[14px] leading-[1.75] text-ink">
+              <MarkdownLite source={content} />
+            </div>
           ) : (
             <div className="text-ink-faint text-[14px] py-12 text-center">
               {t("fileViewer.empty")}
