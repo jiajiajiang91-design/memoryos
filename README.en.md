@@ -1,103 +1,95 @@
 # ◇ MemoryOS
 
-> Working memory across AIs — local-first, no login, your data stays on your computer.
+> One memory across all your AIs — switch without losing the thread.
 >
-> *Your Context. Any AI. Every Workflow.*
+> *Every conversation and every thought becomes an asset that carries forward.*
 
 [中文](./README.md) · [Download](../../releases) · [Issues](../../issues)
 
-MemoryOS is a local-first desktop app that gives you continuous working memory across ChatGPT, Claude, Gemini, Cursor, and others. Your context lives as plain Markdown files on your own machine — nothing uploaded, no account, no cloud.
+MemoryOS is a desktop app that consolidates your working memory across ChatGPT, Claude, Gemini, Cursor, and others into **one page of "memory cards" per project**. Hand that page to any AI at the start of a new chat and it picks up your progress within 30 seconds. Everything is plain Markdown on your own computer — no account, nothing uploaded.
 
-> **New in v0.2**: AI can now **connect directly** to your memory via MCP. Install the extension in Claude Desktop and it reads your project context and writes session handoffs back into the MemoryOS Inbox for your review — no more manual copy-paste.
+![MemoryOS welcome screen](./docs/screenshots/v0.3.0/01_welcome.png)
 
-![MemoryOS welcome — working memory across AIs](./docs/screenshots/en/01_welcome.png)
+> Screenshots show the Chinese UI; the app is fully bilingual (中 / EN, one-click switch).
 
 ---
 
 ## What it solves
 
-Every time you switch between AIs, you lose continuity. ChatGPT Memory only works inside ChatGPT. Claude Projects only inside Claude. After three months of copy-pasting "here's who I am again," you'll want to throw your keyboard.
+When you work across several AIs, every new chat starts from zero: who you are, what the project is, where you left off. ChatGPT's memory only works inside ChatGPT. Claude's projects only work inside Claude. Neither carries over.
 
-MemoryOS doesn't replace any AI tool — it's the *working-memory layer* between them.
-
----
-
-## The loop
-
-```
-[Open any AI in a fresh chat]
-    ↓
-Click "Copy start prompt"
-    ↓
-Paste into the AI → it loads your context
-    ↓
-Work for a while…
-    ↓
-Click "Copy end prompt"
-    ↓
-Paste into the AI → it generates a structured handoff
-    ↓
-Copy handoff back into MemoryOS → click "+ Import handoff"
-    ↓
-Review (old content strikethrough / new content highlighted) → Save
-```
-
-Next time, any AI picks up from the handoff in 30 seconds. Outdated decisions get flagged and retired on confirmation.
-
-![Dashboard — project list on the left, current goal & recent sessions in the middle, metadata on the right](./docs/screenshots/en/02_dashboard.png)
+MemoryOS doesn't replace any AI tool. It is a shared working-memory layer between them: you maintain one memory, and every AI can read it.
 
 ---
 
-## Connect an AI: direct read & write (new in v0.2)
+## Memory cards: one page per project
 
-Beyond copy-paste, v0.2 lets an AI connect to your memory directly via **MCP**. In Claude Desktop: go to Settings → Extensions, install `memoryos.mcpb`, and point it at your workspace path. Claude then gets three tools — **list projects / read project memory / stage a handoff**.
+Each project's memory is distilled into a single page with five sections: **Project Card** (what this is, who it's for), **Current Status** (progress and blockers), **Constraints & Decisions** (every entry dated and attributed), **Last Session** (where you stopped), and **Archive** (where outdated content goes). A global **About Me** card holds your identity and collaboration preferences.
 
-![Enable the MemoryOS extension in Claude Desktop — Enabled + workspace path + three tools](./docs/screenshots/en/05_connect_claude.png)
+![Dashboard — memory cards in full view](./docs/screenshots/v0.3.0/02_dashboard_cards.png)
 
-In a new chat, just ask Claude to "read my project memory" and it picks up your context; when you're done, ask it to "stage this session's handoff."
+Three rules keep the cards useful:
 
-![Claude calling MemoryOS to read project memory directly](./docs/screenshots/en/06_mcp_call.png)
+1. **One page max** — the whole file stays under 1200 characters. Overlong context makes models overlook the middle.
+2. **Sources marked** — your decisions and the AI's suggestions are labeled separately; an AI's idea is never recorded as your call.
+3. **Outdated means archived** — superseded decisions move to the archive. They leave the first page but are never deleted.
 
-> **Key red line**: what the AI writes back does **not** go straight into formal memory — it lands in the MemoryOS **Inbox** for you to confirm item by item. You're always the last gate.
-
-> Web ChatGPT / Gemini can't reach a local MCP server yet (browser sandbox); keep using copy-paste for those — it all lands in the same Inbox.
+What you see on the page is exactly what the AI reads at the start of a session.
 
 ---
 
-## What "Copy end prompt" does
+## Two ways to use it
 
-Click the button — MemoryOS bundles your selected context files + a standardized end-session prompt into your clipboard. Pick which AI you're in (ChatGPT / Claude / Gemini / Grok / Cursor / Codex / DeepSeek / Kimi, or a custom name), paste, and the AI outputs a Markdown handoff in the fixed schema.
+### Copy and paste (works with any AI)
 
-![Copy end prompt — pick which context to include, pick the AI, preview the prompt](./docs/screenshots/en/03_end_prompt.png)
+Four steps per round: paste the start prompt into the AI so it loads your memory cards; work as usual; paste the end prompt so it produces a session summary plus an updated version of the cards; import the result back into MemoryOS and confirm.
+
+![Built-in copy-paste tutorial — four steps](./docs/screenshots/v0.3.0/03_copy_paste_tutorial.png)
+
+### Direct connection with Claude (no copy-paste)
+
+In Claude Desktop, go to Settings → Extensions, install `memoryos.mcpb`, and point it at your workspace. From then on, "read my project memory" at the start and "save the summary back" at the end complete a full round. A step-by-step guide is built into the app.
+
+![Built-in Claude connection tutorial](./docs/screenshots/v0.3.0/06_connect_claude.png)
+
+> Web-based ChatGPT / Gemini can't reach a local program yet (browser restriction); use copy-paste with those — everything lands in the same inbox.
+
+---
+
+## The AI proposes, you decide
+
+Updates the AI writes back land in an **inbox** first, and the dashboard shows a pending badge. The review page presents old and new side by side: removed lines struck through, additions highlighted. The AI's own suggestions are listed separately — adopt or dismiss each one, and a dismissed suggestion never comes back.
+
+![Review page — strikethrough diff, AI suggestions listed separately](./docs/screenshots/v0.3.0/04_review.png)
+
+![Pending badge on the dashboard](./docs/screenshots/v0.3.0/05_inbox_pending.png)
+
+Once you trust the loop, you can enable **trust mode** per project: routine updates from the direct connection save automatically, while anything inconsistent (for example, an update based on a stale version of the cards) still stops for your review. AI suggestions always require your explicit adoption, in every mode.
 
 ---
 
 ## Principles
 
-1. **Local-first** — every file is yours, plain Markdown
-2. **AI proposes, you confirm** — nothing writes to disk without your checkbox; the same holds for MCP write-backs, which land in the Inbox for review before they're saved
-3. **Memory stays current** — AI marks what's outdated, you confirm, stale decisions retire — the next AI always gets up-to-date context
-4. **No conversation scraping** — handoffs are user-pasted, never auto-read
-5. **Risk-tiered import** — sessions are low-risk, project context medium, About-Me high (default off + warning)
-6. **Reversible delete** — projects go to system trash with a 5-second in-app Undo
+1. **AI organizes, you confirm** — every write goes through your checkbox; direct write-backs go through the inbox first
+2. **Memory stays current** — one latest version per topic; outdated content is archived, not deleted
+3. **Sources stay traceable** — each decision carries a date and its original wording; suggestions and decisions are separated at the source
+4. **No conversation scraping** — summaries are generated by the AI inside your chat and handed back by you; the app never reads your chat history
+5. **Reversible delete** — projects go to the system recycle bin, with a 5-second in-app undo
 
 ---
 
 ## Features
 
-- 🌍 **Full bilingual UI** — one-click switch (中 / EN), UI + prompt templates + sample project all follow
-- 🗂 **Multi-project workspace** — sidebar manages projects and core files
-- 🤖 **8 preset AIs + custom** — ChatGPT / Claude / Gemini / Grok / Cursor / Codex / DeepSeek / Kimi
-- 🛡 **System-trash delete** — projects go to OS recycle bin with 5-second in-app Undo
-- 📝 **Pure Markdown** — open files in Obsidian, VS Code, anywhere
-- 🎯 **Risk-tiered import** — AI's suggested updates are grouped by risk; you pick what saves
-- ✏️ **In-app file editing** — core files (About Me / Context / Decisions) can be edited and saved directly in the viewer modal
-- 🔄 **Superseded merge** — AI marks what's outdated in each handoff; Review page shows old (strikethrough) vs new (highlighted); confirm to retire stale content
-- 🔌 **Connect an AI (MCP)** — clients like Claude Desktop read your memory and stage handoffs directly, no copy-paste
-- 📥 **Memory Inbox** — AI write-backs land in a pending Inbox first; nothing enters formal memory until you confirm
-- 💬 **One-click feedback** — write a note, one click copies to clipboard and opens GitHub Issues
-
-![Help drawer — four steps, one complete loop](./docs/screenshots/en/04_help.png)
+- **Memory cards** — one page per project, five sections; what you see is what the AI gets
+- **Fully bilingual** — one-click switch; UI and prompt templates follow your language
+- **8 preset AIs + custom** — ChatGPT / Claude / Gemini / Grok / Cursor / Codex / DeepSeek / Kimi
+- **Direct Claude connection** — install one extension; reading memory and saving summaries need no copy-paste
+- **Inbox and review page** — strikethrough diff; adopt or dismiss AI suggestions, dismissed ones never return
+- **Trust mode** — per-project switch; routine updates save automatically, doubtful ones still ask you
+- **One-step upgrade for old projects** — a single prompt lets the AI draft the first memory cards for any pre-existing project
+- **Plain Markdown** — open everything in Obsidian, VS Code, or Notepad; copying the folder is a full backup
+- **In-app editing** — cards and core files can be edited right in the viewer
+- **One-click feedback** — write a note, copy it, and open GitHub Issues in one step
 
 ---
 
@@ -105,9 +97,9 @@ Click the button — MemoryOS bundles your selected context files + a standardiz
 
 ### Use the installer (Windows, recommended)
 
-Grab the latest `.exe` (one-click) or `.msi` (managed install) from [Releases](../../releases).
+Download the latest `.exe` (one-click) or `.msi` (managed install) from [Releases](../../releases).
 
-Windows will show an "unknown publisher" warning (no code-signing yet). Click "More info → Run anyway." The app doesn't go online or touch anything outside the folder you pick.
+Windows shows an "unknown publisher" warning (no code-signing yet); click "More info → Run anyway." The app stays offline and never touches files outside the folder you choose.
 
 ### Build from source
 
@@ -129,53 +121,47 @@ Default `~/Documents/MemoryOS/`:
 
 ```
 MemoryOS/
-├── about_me.md                          ← long-term identity (global)
+├── about_me.md                          ← About Me (global)
 └── projects/
     └── <project-name>/
         ├── project.json                  ← metadata
-        ├── 00_context.md                 ← project snapshot
-        ├── decisions.md                  ← key-decisions log
-        └── sessions/                     ← handoff archive
-            ├── session_2026-05-15_1746.md
-            └── session_2026-05-16_0030.md
+        ├── cards.md                      ← memory cards (what the AI reads first)
+        ├── decisions.md                  ← decision archive (where outdated entries go)
+        ├── 00_context.md                 ← legacy project context (frozen as archive after upgrade)
+        └── sessions/                     ← session summaries
+            └── session_2026-06-10_2130.md
 ```
 
-Any editor opens these (Obsidian, VS Code, Notepad). Copying the folder is a full backup.
-
-> File names stay English for AI recognition + tool interop; the UI displays friendly names ("About Me / Project Context / Decisions / Sessions") in your chosen language.
+Any editor opens these. Copying the folder is a complete backup.
 
 ---
 
 ## Stack
 
-- **Tauri 1.5** — Rust-core desktop framework (50× smaller than Electron)
+- **Tauri 1.5** — Rust-core desktop framework; the Windows installer is about 1.8 MB
 - **React 18 + TypeScript** — frontend
-- **Tailwind CSS** — Notion-style slate-and-paper design
-- **`trash` crate** — cross-platform OS trash via Rust
+- **Tailwind CSS** — styling, with International Klein Blue #002FA7 as the accent
+- **`trash` crate** — recycle-bin delete and restore via Rust
 - **Vite** — build
-
-Windows installer is ~**1.7 MB**.
 
 ---
 
-## Roadmap
+## Versions
 
-- [x] v0.1.0 — Core loop, project management, bootstrap, Windows installer
-- [x] v0.1.1 — Bilingual UI / system-trash delete + Undo / UX polish
-- [x] v0.1.2 — Fault-tolerant parser / Superseded memory merge / in-app file editing / feedback channel
-- [x] **v0.2.0 — Connect an AI (MCP) / Memory Inbox + Review / one-click Claude Desktop extension** (current)
-- [ ] v0.3 — More AI-client connections / browser-extension exploration / seed-user interviews
-- [ ] v0.4 — Mac / Linux builds, code-signing
-- [ ] v1.0 — Full Markdown editor + community
+- [x] v0.1 — core loop, project management, Windows installer, bilingual UI
+- [x] v0.2 — AI connection (MCP), memory inbox, Claude Desktop extension
+- [x] **v0.3 — memory cards, trust mode, new UI** (current)
+- [ ] Possible next steps (no fixed order): more AI-client connections, Mac / Linux builds, code-signing
 
 ---
 
 ## Feedback
 
-[Issues](../../issues) welcome. Most useful kinds:
+[Issues](../../issues) welcome. The most useful kinds:
+
 - Where you got stuck during onboarding
-- Features you wanted but couldn't find
-- Features you'll *never* use (this one matters more)
+- Features you expected but couldn't find
+- Features you will never use (this one matters more)
 
 ---
 
