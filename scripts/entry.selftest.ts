@@ -1,0 +1,118 @@
+// 条目纯函数库自测（src/lib/entry.ts，纯函数）。
+// 运行：npx esbuild scripts/entry.selftest.ts --bundle --platform=node --format=esm --outfile=tmp.entry.mjs && node tmp.entry.mjs
+//
+// 覆盖：发号、八类分组含多标签进多组、导出 md、导入解析、按编号对账、
+//       导出再导回不变的闭环、六卡迁移。
+
+import {
+  ALL_KINDS,
+  nextEntryId,
+  groupByKind,
+  exportToMarkdown,
+  parseMarkdown,
+  reconcileImport,
+  migrateCardsToEntries,
+  type MemoryEntry,
+  type EntryKind,
+} from "../src/lib/entry";
+
+let pass = 0;
+let fail = 0;
+function ok(cond: boolean, msg: string) {
+  if (cond) { pass++; console.log("  ✓ " + msg); }
+  else { fail++; console.error("  ✗ FAIL: " + msg); }
+}
+function eq(a: unknown, b: unknown, msg: string) {
+  ok(JSON.stringify(a) === JSON.stringify(b), `${msg}  (got ${JSON.stringify(a)} want ${JSON.stringify(b)})`);
+}
+
+function mk(p: Partial<MemoryEntry> & { id: string; text: string }): MemoryEntry {
+  return {
+    kinds: p.kinds ?? ["misc"],
+    scopes: p.scopes ?? ["proj"],
+    source: p.source ?? "user",
+    createdAt: p.createdAt ?? "2026-06-28",
+    updatedAt: p.updatedAt ?? "2026-06-28",
+    ...p,
+  };
+}
+
+console.log("\n[A] 发号");
+eq(nextEntryId([]), "m-0001", "空集发 m-0001");
+eq(nextEntryId([{ id: "m-0003" }, { id: "m-0001" }]), "m-0004", "最大号加一");
+eq(nextEntryId([{ id: "x-9" }, { id: "m-0002" }]), "m-0003", "非 m 编号忽略");
+
+console.log("\n[B] 八类分组，多标签进多组");
+const e1 = mk({ id: "m-0001", text: "优先做升权捞回", kinds: ["decision", "state"] });
+const e2 = mk({ id: "m-0002", text: "不联网", kinds: ["constraint"] });
+const e3 = mk({ id: "m-0003", text: "没类型", kinds: [] });
+const g = groupByKind([e1, e2, e3]);
+eq(g.decision.map((x) => x.id), ["m-0001"], "决策组含 e1");
+eq(g.state.map((x) => x.id), ["m-0001"], "状态组也含 e1，多标签进多组");
+eq(g.constraint.map((x) => x.id), ["m-0002"], "约束组含 e2");
+eq(g.misc.map((x) => x.id), ["m-0003"], "无类型归零散");
+ok(ALL_KINDS.length === 8, "八类齐");
+
+console.log("\n[C] 导出 md + 解析");
+const md = exportToMarkdown([e1, e2]);
+ok(md.includes("## 决策") && md.includes("## 约束"), "导出按主类型分区块");
+ok((md.match(/m-0001/g) ?? []).length === 1, "多标签的 e1 在导出里只出现一次");
+ok(md.includes("#决策 #状态"), "行尾带全部类型标签");
+const parsed = parseMarkdown(md);
+eq(parsed.length, 2, "解析回两条");
+const p1 = parsed.find((x) => x.id === "m-0001")!;
+eq(p1.text, "优先做升权捞回", "解析正文去掉标签");
+eq([...p1.kinds].sort(), ["decision", "state"], "解析回两个类型");
+eq(p1.source, "user", "解析回来源");
+
+console.log("\n[D] 导出再导回不变的闭环");
+const plan0 = reconcileImport([e1, e2], parseMarkdown(exportToMarkdown([e1, e2])));
+eq(plan0.updates.length, 0, "原样导回无更新");
+eq(plan0.adds.length, 0, "原样导回无新增");
+eq(plan0.deletes.length, 0, "原样导回无删除");
+
+console.log("\n[E] 对账：改、删、加");
+// 改正文
+const mdEdited = exportToMarkdown([e1, e2]).replace("优先做升权捞回", "优先做升权捞回（改过）");
+const planU = reconcileImport([e1, e2], parseMarkdown(mdEdited));
+eq(planU.updates.length, 1, "正文改了产生一条更新");
+eq(planU.updates[0].current.id, "m-0001", "更新指向 m-0001");
+// 删整行：导回只剩 e1
+const planD = reconcileImport([e1, e2], parseMarkdown(exportToMarkdown([e1])));
+eq(planD.deletes.map((x) => x.id), ["m-0002"], "整行没了进删除候选");
+// 新增没编号的行
+const planA = reconcileImport([e1], parseMarkdown("- 新加的一条 #事实 @用户"));
+eq(planA.adds.length, 1, "没编号的新行进新增");
+eq(planA.adds[0].kinds, ["fact"], "新行解析出类型");
+
+console.log("\n[F] 并发冲突");
+const e1New = mk({ id: "m-0001", text: "优先做升权捞回", kinds: ["decision"], updatedAt: "2026-06-29" });
+const planC = reconcileImport(
+  [e1New],
+  parseMarkdown(exportToMarkdown([e1New]).replace("优先做升权捞回", "导出后我又改了")),
+  { exportedAt: "2026-06-28" }
+);
+ok(planC.updates.length === 1 && planC.updates[0].conflict === true, "导出后 app 又改过，标冲突");
+
+console.log("\n[G] 六卡迁移");
+const cards = `# 记忆卡片
+## 项目卡
+- 跨 AI 携带记忆的桌面工具
+## 当前状态
+- 已完成：地基库
+- 进行中：接线
+## 约束与决策
+- 不联网
+## 历史档案
+- 决策历史 → decisions.md
+`;
+const migrated = migrateCardsToEntries(cards, "memoryos", "2026-06-28");
+eq(migrated.length, 4, "迁出 4 条，历史档案跳过");
+eq(migrated.find((e) => e.text.includes("桌面工具"))!.kinds, ["fact"], "项目卡进事实类");
+eq(migrated.filter((e) => e.kinds[0] === "state").length, 2, "当前状态两行进状态类");
+eq(migrated.find((e) => e.text === "不联网")!.kinds, ["decision"], "约束与决策进决策类");
+eq(migrated[0].id, "m-0001", "迁移从 m-0001 发号");
+ok(migrated.every((e) => e.scopes[0] === "memoryos" && e.source === "user"), "归属和来源正确");
+
+console.log(`\n结果：${pass} passed, ${fail} failed\n`);
+if (fail > 0) process.exit(1);
