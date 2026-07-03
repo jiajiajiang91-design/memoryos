@@ -561,6 +561,47 @@ export async function autoApplyTrustedInbox(workspace: string): Promise<number> 
   return applied;
 }
 
+// ── 条目库存储（记忆展示形态第 1 轮：jsonl，一条一行，坏行隔离）────────
+// 三种库平级：项目库 projects/<slug>/entries.jsonl；
+// 全局库 entries/global.jsonl；技能库 entries/skill.jsonl。
+
+import { toJsonl, fromJsonl, type MemoryEntry, type JsonlParseResult } from "./entry";
+
+/** 库标识：项目 slug、"global" 全局库、"skill" 技能库。 */
+export type EntryLib = { kind: "project"; slug: string } | { kind: "global" } | { kind: "skill" };
+
+async function entriesFilePath(workspace: string, lib: EntryLib): Promise<string> {
+  if (lib.kind === "project") {
+    return await join(workspace, "projects", lib.slug, "entries.jsonl");
+  }
+  const dir = await join(workspace, "entries");
+  if (!(await exists(dir))) await createDir(dir, { recursive: true });
+  return await join(dir, lib.kind === "global" ? "global.jsonl" : "skill.jsonl");
+}
+
+/** 读一个库。文件不存在返回空库；坏行跳过并报行号，好行不丢。 */
+export async function readEntriesLib(
+  workspace: string,
+  lib: EntryLib
+): Promise<JsonlParseResult> {
+  const path = await entriesFilePath(workspace, lib);
+  if (!(await exists(path))) return { entries: [], badLines: [] };
+  return fromJsonl(await readTextFile(path));
+}
+
+/** 写一个库（覆盖）。原子写：先写 .tmp 再改名，避免读到半写文件。 */
+export async function writeEntriesLib(
+  workspace: string,
+  lib: EntryLib,
+  entries: MemoryEntry[]
+): Promise<void> {
+  const path = await entriesFilePath(workspace, lib);
+  const tmp = path + ".tmp";
+  await writeTextFile(tmp, toJsonl(entries));
+  await renameFile(tmp, path);
+  if (lib.kind === "project") await touchProjectUpdatedAt(workspace, lib.slug);
+}
+
 export async function readAboutMe(workspace: string): Promise<string> {
   const path = await join(workspace, "about_me.md");
   return (await exists(path)) ? await readTextFile(path) : "";

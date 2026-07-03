@@ -235,6 +235,49 @@ function sameKinds(a: EntryKind[], b: EntryKind[]): boolean {
   return sa.every((k, i) => k === sb[i]);
 }
 
+// ── 存储序列化（jsonl，一条一行；坏行隔离不连累其他条目）──────────
+
+/** 条目集合序列化成 jsonl，一条一行，稳定可差异比对。 */
+export function toJsonl(entries: MemoryEntry[]): string {
+  return entries.map((e) => JSON.stringify(e)).join("\n") + (entries.length ? "\n" : "");
+}
+
+export type JsonlParseResult = {
+  entries: MemoryEntry[];
+  badLines: number[]; // 解析失败的行号，从 1 起，供提示用户；坏行跳过不丢好行
+};
+
+/** 解析 jsonl。单行损坏只跳过该行并记行号，好行全部保留。 */
+export function fromJsonl(text: string): JsonlParseResult {
+  const entries: MemoryEntry[] = [];
+  const badLines: number[] = [];
+  const lines = text.split("\n");
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i].trim();
+    if (!line) continue;
+    try {
+      const obj = JSON.parse(line);
+      if (typeof obj?.id === "string" && typeof obj?.text === "string") {
+        entries.push({
+          modality: "text",
+          relations: [],
+          kinds: [],
+          scopes: [],
+          source: "user",
+          createdAt: "",
+          updatedAt: "",
+          ...obj,
+        });
+      } else {
+        badLines.push(i + 1);
+      }
+    } catch {
+      badLines.push(i + 1);
+    }
+  }
+  return { entries, badLines };
+}
+
 // ── 六卡迁移（把现有六卡 md 机械解析成条目，类型由区块标题映射）──────
 
 /** 六卡区块标题映射到类型。机械第一版，AI 再细化（功能定义第 6 节）。 */

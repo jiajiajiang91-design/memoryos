@@ -12,6 +12,8 @@ import {
   parseMarkdown,
   reconcileImport,
   migrateCardsToEntries,
+  toJsonl,
+  fromJsonl,
   type MemoryEntry,
   type EntryKind,
 } from "../src/lib/entry";
@@ -127,6 +129,30 @@ const mdRel = exportToMarkdown([withRel]);
 ok(!mdRel.includes("m-0001]") || mdRel.includes("[m-0009]"), "导出 md 不外泄关联结构");
 const planRel = reconcileImport([withRel], parseMarkdown(exportToMarkdown([withRel])));
 eq(planRel.updates.length + planRel.adds.length + planRel.deletes.length, 0, "带关联条目导出导回不变");
+
+console.log("\n[I] jsonl 存储序列化");
+const store = [e1, e2, withRel];
+const jl = toJsonl(store);
+eq(jl.trimEnd().split("\n").length, 3, "三条三行");
+const back = fromJsonl(jl);
+eq(back.badLines, [], "全好行无坏行");
+const norm = (es: MemoryEntry[]) =>
+  es.map((e) => [e.id, e.text, [...e.kinds].sort(), [...e.scopes].sort(), e.source, e.modality, e.relations, e.createdAt, e.updatedAt]);
+eq(norm(back.entries), norm(store), "jsonl 往返不变");
+eq(fromJsonl("").entries.length, 0, "空文件空库");
+// 坏行隔离：中间一行损坏，其余保留
+const damaged = jl.split("\n");
+damaged[1] = damaged[1].slice(0, 20); // 截断第 2 行制造坏 JSON
+const iso = fromJsonl(damaged.join("\n"));
+eq(iso.badLines, [2], "坏行报行号 2");
+eq(iso.entries.map((e) => e.id), ["m-0001", "m-0009"], "坏行跳过好行保留");
+// 缺字段的行也算坏行
+const noId = fromJsonl('{"text":"没编号"}\n');
+eq(noId.badLines, [1], "缺 id 算坏行");
+// 旧数据缺新字段时补默认
+const legacy = fromJsonl('{"id":"m-0001","text":"旧条目","kinds":["fact"],"scopes":["p"],"source":"user","createdAt":"2026-01-01","updatedAt":"2026-01-01"}\n');
+eq(legacy.entries[0].modality, "text", "旧数据补默认模态");
+eq(legacy.entries[0].relations, [], "旧数据补空关联");
 
 console.log(`\n结果：${pass} passed, ${fail} failed\n`);
 if (fail > 0) process.exit(1);
