@@ -272,6 +272,8 @@ const DICT: Record<string, Entry> = {
   "entryLib.migrateDone": { zh: "已整理 {n} 条记忆进条目库", en: "Converted {n} entries" },
   "entryLib.badLines": { zh: "{n} 行数据损坏已跳过，其余条目完好", en: "{n} damaged lines skipped; other entries intact" },
   "entryLib.editTags": { zh: "编辑标签", en: "Edit tags" },
+  "entryLib.relAdd": { zh: "添加关联…", en: "Add relation…" },
+  "entryLib.relHint": { zh: "这条记忆和哪条有关系。相关的记忆会倾向一起给 AI", en: "Link this memory to another. Related memories tend to be injected together" },
   "entryLib.moveToProject": { zh: "移到项目库", en: "Move to project" },
   "entryLib.moveToGlobal": { zh: "移到全局库", en: "Move to global" },
   "entryLib.moveToSkill": { zh: "移到技能库", en: "Move to skills" },

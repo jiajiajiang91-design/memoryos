@@ -315,6 +315,46 @@ export default function EntryLibraryPage(props: Props) {
                             );
                           })}
                           <span className="mx-1 h-4 w-px bg-hairline" />
+                          {e.relations.map((r) => {
+                            const target = props.entries.find((x) => x.id === r.to);
+                            return (
+                              <button
+                                key={`${e.id}-rel-${r.to}`}
+                                onClick={() =>
+                                  props.onUpdateEntry(e.id, {
+                                    relations: e.relations.filter((x) => x.to !== r.to),
+                                  })
+                                }
+                                title={target?.text ?? r.to}
+                                className="px-2 py-1 rounded-full text-[11px] bg-[#E8EDFF] text-[#002FA7] inline-flex items-center gap-1 hover:opacity-70 transition-opacity"
+                              >
+                                <Link2 size={10} strokeWidth={1.5} />
+                                {r.to} ×
+                              </button>
+                            );
+                          })}
+                          <select
+                            value=""
+                            title={t("entryLib.relHint")}
+                            onChange={(ev) => {
+                              const to = ev.target.value;
+                              if (!to) return;
+                              props.onUpdateEntry(e.id, {
+                                relations: [...e.relations, { to, rel: "related" }],
+                              });
+                            }}
+                            className="h-7 px-1.5 rounded-lg border border-hairline bg-surface text-[11px] text-ink-soft focus:outline-none max-w-[180px]"
+                          >
+                            <option value="">{t("entryLib.relAdd")}</option>
+                            {active
+                              .filter((x) => x.id !== e.id && !e.relations.some((r) => r.to === x.id))
+                              .map((x) => (
+                                <option key={x.id} value={x.id}>
+                                  {x.id} {x.text.slice(0, 16)}
+                                </option>
+                              ))}
+                          </select>
+                          <span className="mx-1 h-4 w-px bg-hairline" />
                           {(["project", "global", "skill"] as const)
                             .filter((lb) => lb !== props.libKind)
                             .map((lb) => (
