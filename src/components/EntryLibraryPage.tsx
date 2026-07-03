@@ -4,7 +4,7 @@
 // 切换真实注入链路等六卡迁移完成后再做（设计稿第 9 节 S5 之后）。
 
 import { useMemo, useState } from "react";
-import { ArrowLeft, Bot, User, Sparkles, LayoutGrid, Upload, Download } from "lucide-react";
+import { ArrowLeft, Bot, User, Sparkles, LayoutGrid, Upload, Download, Search, Link2 } from "lucide-react";
 import {
   ALL_KINDS,
   KIND_LABELS,
@@ -51,7 +51,16 @@ export default function EntryLibraryPage(props: Props) {
   const [importOpen, setImportOpen] = useState(false);
   const [importText, setImportText] = useState("");
   const [importBusy, setImportBusy] = useState(false);
-  const grouped = useMemo(() => groupByKind(props.entries), [props.entries]);
+  const [query, setQuery] = useState("");
+  // 关键词检索：搜正文和编号，直面混乱性痛点的第一版
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return props.entries;
+    return props.entries.filter(
+      (e) => e.text.toLowerCase().includes(q) || e.id.toLowerCase().includes(q)
+    );
+  }, [props.entries, query]);
+  const grouped = useMemo(() => groupByKind(filtered), [filtered]);
   const injection = useMemo(() => buildInjectionFromEntries(props.entries), [props.entries]);
 
   return (
@@ -121,7 +130,16 @@ export default function EntryLibraryPage(props: Props) {
           </div>
         ) : view === "user" ? (
           <div className="max-w-[808px] space-y-8">
-            <div className="flex gap-2">
+            <div className="flex gap-2 items-center">
+              <div className="relative flex-1 max-w-[320px]">
+                <Search size={14} strokeWidth={1.5} className="absolute left-3 top-1/2 -translate-y-1/2 text-ink-faint" />
+                <input
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  placeholder={t("entryLib.searchPlaceholder")}
+                  className="w-full h-9 pl-8 pr-3 rounded-lg border border-hairline bg-surface text-[13px] focus:outline-none focus:border-slate/50"
+                />
+              </div>
               <button
                 onClick={props.onExportMd}
                 className="h-9 px-3.5 rounded-lg border border-hairline text-[13px] text-ink-soft inline-flex items-center gap-1.5 hover:text-ink hover:border-slate/40 transition-colors"
@@ -161,6 +179,9 @@ export default function EntryLibraryPage(props: Props) {
                 </button>
               </div>
             )}
+            {filtered.length === 0 && query.trim() && (
+              <p className="text-[14px] text-ink-faint text-center py-10">{t("entryLib.searchNoHit")}</p>
+            )}
             {ALL_KINDS.map((k) =>
               grouped[k].length === 0 ? null : (
                 <section key={k}>
@@ -185,6 +206,12 @@ export default function EntryLibraryPage(props: Props) {
                           <span className="px-2 py-0.5 rounded-full text-[11px] bg-[#F0F1F3] text-[#5A6070]">
                             {SOURCE_LABELS[e.source]}
                           </span>
+                          {e.relations.length > 0 && (
+                            <span className="px-2 py-0.5 rounded-full text-[11px] bg-[#E8EDFF] text-[#002FA7] inline-flex items-center gap-1">
+                              <Link2 size={10} strokeWidth={1.5} />
+                              {t("entryLib.relations", { n: e.relations.length })}
+                            </span>
+                          )}
                           {e.source === "third_party" && (
                             <span className={`px-2 py-0.5 rounded-full text-[11px] ${
                               e.truthiness === "verified" ? "bg-[#E6F5EC] text-[#1E7A46]" : "bg-[#FFF5E1] text-[#A37A1C]"
