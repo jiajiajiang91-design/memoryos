@@ -11,6 +11,7 @@ import {
   exportToMarkdown,
   parseMarkdown,
   reconcileImport,
+  syncEntriesWithCards,
   migrateCardsToEntries,
   toJsonl,
   fromJsonl,
@@ -190,6 +191,31 @@ eq(archBack.entries[0].archived?.reason, "manual", "归档原因随存储往返�
 // 捞回 = 清掉归档字段后重新进注入
 const reclaimed = { ...archived, archived: undefined };
 ok(buildInjectionFromEntries([reclaimed]).includedIds.includes("m-0401"), "捞回后重新进注入");
+
+console.log("\n[L] 写入闭环：卡片同步条目库");
+
+const baseEntries = [
+  mk({ id: "m-0001", text: "已完成：地基库", kinds: ["state"] }),
+  mk({ id: "m-0002", text: "旧决策要被替代", kinds: ["decision"] }),
+  mk({ id: "m-0003", text: "钉住的旧决策", kinds: ["decision"], pinned: true }),
+];
+const newCards = `# 记忆卡片
+## 当前状态
+- 已完成：地基库
+- 进行中：新工作
+## 约束与决策
+- 新的决策
+`;
+const sync = syncEntriesWithCards(baseEntries, newCards, "proj", "2026-07-04", ["旧决策要被替代", "钉住的旧决策"]);
+eq(sync.added, 2, "只补两条新行，已有的不重复");
+ok(sync.entries.some((e) => e.text === "进行中：新工作"), "新行进条目库");
+const sup2 = sync.entries.find((e) => e.id === "m-0002")!;
+eq(sup2.archived?.reason, "superseded", "被替代的盖作废归档章");
+ok(!sync.entries.find((e) => e.id === "m-0003")!.archived, "钉住的豁免自动归档");
+eq(sync.archivedCount, 1, "归档计数只算真归档的");
+// 幂等：同一份卡片再同步一次不再新增
+const sync2 = syncEntriesWithCards(sync.entries, newCards, "proj", "2026-07-04");
+eq(sync2.added, 0, "重复同步不再新增");
 
 console.log(`\n结果：${pass} passed, ${fail} failed\n`);
 if (fail > 0) process.exit(1);

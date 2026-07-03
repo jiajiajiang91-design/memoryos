@@ -33,6 +33,7 @@ import {
   autoApplyTrustedInbox,
   readEntriesLib,
   writeEntriesLib,
+  syncProjectEntriesFromCards,
   type EntryLib,
 } from "./lib/fs";
 import {
@@ -426,12 +427,15 @@ export default function App() {
       if (cardsSug.superseded?.length) {
         await appendDecisionsArchive(workspace, slug, cardsSug.superseded, today);
       }
+      // 写入闭环：条目库已启用则同步，新行补进、被替代的盖归档章
+      await syncProjectEntriesFromCards(workspace, slug, content, cardsSug.superseded ?? []);
       saved++;
     } else if (adopted.length) {
       // 提案没勾但有采纳的建议 → 直接并进当前记忆卡片
       let content = adoptSuggestionsIntoCards(review.cards, adopted, today, lang);
       content = stampCards(content, today, lang);
       await writeProjectCards(workspace, slug, content);
+      await syncProjectEntriesFromCards(workspace, slug, content);
       saved++;
     }
     for (const r of aiSugs.filter((x) => x.rejected)) {
@@ -946,7 +950,10 @@ export default function App() {
             if (f === "about_me.md") await writeAboutMe(workspace, newContent);
             else if (f === "00_context.md") await writeProjectContext(workspace, currentSlug, newContent);
             else if (f === "decisions.md") await writeProjectDecisions(workspace, currentSlug, newContent);
-            else if (f === "cards.md") await writeProjectCards(workspace, currentSlug, newContent);
+            else if (f === "cards.md") {
+              await writeProjectCards(workspace, currentSlug, newContent);
+              await syncProjectEntriesFromCards(workspace, currentSlug, newContent);
+            }
             setViewingCoreFile(null);
             setRefreshKey((k) => k + 1);
             showToast(t("toast.fileSaved", { name: viewingCoreFile.filename }));

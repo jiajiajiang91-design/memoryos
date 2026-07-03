@@ -308,6 +308,48 @@ export function buildInjectionFromEntries(
   return { text, charCount: entryCharCount(text), includedIds, droppedIds };
 }
 
+// ── 写入闭环：卡片入库后同步条目库（机械第一版）───────────────────
+// 新对话总结写进 cards.md 后调用：卡片里的新行补进条目库，被替代的旧条目
+// 盖作废归档章。不动用户手动调过的档位、钉住和已有条目，钉住的豁免自动归档。
+
+const normText = (t: string) => t.replace(/\s+/g, " ").trim();
+
+export type SyncResult = { entries: MemoryEntry[]; added: number; archivedCount: number };
+
+export function syncEntriesWithCards(
+  existing: MemoryEntry[],
+  cardsMd: string,
+  scope: EntryScope,
+  now: string,
+  superseded: string[] = []
+): SyncResult {
+  const have = new Set(existing.filter((e) => !e.archived).map((e) => normText(e.text)));
+  const counter: { id: string }[] = [...existing];
+  const out: MemoryEntry[] = [...existing];
+  let added = 0;
+  for (const cand of migrateCardsToEntries(cardsMd, scope, now)) {
+    if (have.has(normText(cand.text))) continue;
+    const id = nextEntryId(counter);
+    counter.push({ id });
+    out.push({ ...cand, id });
+    have.add(normText(cand.text));
+    added++;
+  }
+  let archivedCount = 0;
+  const final = out.map((e) => {
+    if (e.archived || e.pinned) return e;
+    const en = normText(e.text);
+    const hit = superseded.some((s) => {
+      const sn = normText(s);
+      return sn.length > 3 && (en.includes(sn) || sn.includes(en));
+    });
+    if (!hit) return e;
+    archivedCount++;
+    return { ...e, archived: { reason: "superseded" as const, at: now }, updatedAt: now };
+  });
+  return { entries: final, added, archivedCount };
+}
+
 // ── 存储序列化（jsonl，一条一行；坏行隔离不连累其他条目）──────────
 
 /** 条目集合序列化成 jsonl，一条一行，稳定可差异比对。 */

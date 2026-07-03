@@ -550,9 +550,12 @@ export async function autoApplyTrustedInbox(workspace: string): Promise<number> 
       if (cur.trim() && curStamp && propStamp && curStamp.distilledOn !== propStamp.distilledOn) {
         continue; // 日期不一致：可能盖掉别的会话的更新，降级人工
       }
-      await writeProjectCards(workspace, item.slug, stampCards(proposed, today));
+      const stamped = stampCards(proposed, today);
+      await writeProjectCards(workspace, item.slug, stamped);
       const sup = item.handoff.proposedCardsSuperseded ?? [];
       if (sup.length) await appendDecisionsArchive(workspace, item.slug, sup, today);
+      // 写入闭环：条目库已启用则同步（信任模式路径同样不落下）
+      await syncProjectEntriesFromCards(workspace, item.slug, stamped, sup);
     }
     await saveSession(workspace, item.slug, inboxHandoffToMarkdown(item.handoff));
     await archiveInboxItem(workspace, filename, "applied");
@@ -565,7 +568,7 @@ export async function autoApplyTrustedInbox(workspace: string): Promise<number> 
 // 三种库平级：项目库 projects/<slug>/entries.jsonl；
 // 全局库 entries/global.jsonl；技能库 entries/skill.jsonl。
 
-import { toJsonl, fromJsonl, type MemoryEntry, type JsonlParseResult } from "./entry";
+import { toJsonl, fromJsonl, syncEntriesWithCards, type MemoryEntry, type JsonlParseResult } from "./entry";
 
 /** 库标识：项目 slug、"global" 全局库、"skill" 技能库。 */
 export type EntryLib = { kind: "project"; slug: string } | { kind: "global" } | { kind: "skill" };
@@ -600,6 +603,26 @@ export async function writeEntriesLib(
   await writeTextFile(tmp, toJsonl(entries));
   await renameFile(tmp, path);
   if (lib.kind === "project") await touchProjectUpdatedAt(workspace, lib.slug);
+}
+
+/**
+ * 写入闭环：卡片入库后同步项目条目库。库文件不存在说明还没启用条目库，跳过。
+ * 新行补进、被替代的盖作废归档章、钉住的豁免。返回补进条数，负一表示未启用。
+ */
+export async function syncProjectEntriesFromCards(
+  workspace: string,
+  slug: string,
+  cardsMd: string,
+  superseded: string[] = []
+): Promise<number> {
+  const path = await join(workspace, "projects", slug, "entries.jsonl");
+  if (!(await exists(path))) return -1;
+  const cur = fromJsonl(await readTextFile(path));
+  const today = new Date().toISOString().slice(0, 10);
+  const res = syncEntriesWithCards(cur.entries, cardsMd, slug, today, superseded);
+  if (res.added === 0 && res.archivedCount === 0) return 0;
+  await writeEntriesLib(workspace, { kind: "project", slug }, res.entries);
+  return res.added;
 }
 
 export async function readAboutMe(workspace: string): Promise<string> {
