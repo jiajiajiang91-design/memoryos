@@ -5,6 +5,10 @@
 //       红线1(改数值·层内排序·捞回守卫)/红线2(两种归档分开)/F接口/D1兜底。
 
 import {
+  slowestHalfLife,
+  freshnessFromAgeMulti,
+  certaintyFromEntrySource,
+  scoreEntry,
   FACTOR_WEIGHTS,
   THRESHOLDS,
   NEUTRAL_SCORE,
@@ -168,6 +172,21 @@ const decs = [
   { id: "top", weight: mkRec({ manualScore: 80 }), dateTs: 1 },
 ];
 eq(sortDecisions(decs).map((x) => x.id), ["top", "new", "old"], "F4 先权重后日期");
+
+console.log("\n[G] 多标签接入（衰减取最慢、来源四类确定性、条目级合成）");
+eq(slowestHalfLife(["decision", "state"]), 180, "决策加状态取最慢 180 天");
+eq(slowestHalfLife(["state"]), 14, "只状态 14 天");
+eq(slowestHalfLife([]), 30, "空类型按零散 30 天");
+near(freshnessFromAgeMulti(180, ["decision", "state"]), 50, 0.001, "多类型 180 天按决策半衰");
+ok(certaintyFromEntrySource("user") > certaintyFromEntrySource("ai_suggestion"), "确定性 用户>AI建议");
+ok(certaintyFromEntrySource("ai_suggestion") > certaintyFromEntrySource("ai_inference"), "确定性 AI建议>AI推论");
+ok(certaintyFromEntrySource("ai_inference") > certaintyFromEntrySource("third_party"), "确定性 AI推论>三方未校验");
+ok(certaintyFromEntrySource("third_party", "verified") > certaintyFromEntrySource("third_party"), "三方已校验上调");
+eq(scoreEntry({ kinds: ["state"], source: "user", weight: 88 }, 100), 88, "条目手动分优先");
+ok(
+  scoreEntry({ kinds: ["decision"], source: "user" }, 0) > scoreEntry({ kinds: ["state"], source: "third_party" }, 60),
+  "新鲜用户决策分高于过期三方状态"
+);
 
 console.log(`\n结果：${pass} passed, ${fail} failed\n`);
 if (fail > 0) process.exit(1);

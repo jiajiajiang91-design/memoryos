@@ -135,6 +135,73 @@ export function freshnessFromAge(daysOld: number, kind: MemoryKind): number {
   return clampScore(100 * Math.pow(0.5, d / halfLife));
 }
 
+// ── 多标签接入（06-28 确认：一条多类型时衰减按最慢的那类算）─────────
+
+// 条目库的八类映射到权重的衰减类型。事实和偏好是稳定信息，按慢衰减对待。
+const ENTRY_KIND_TO_MEMORY_KIND: Readonly<Record<string, MemoryKind>> = {
+  decision: "decision",
+  constraint: "constraint",
+  state: "state",
+  handoff: "handoff",
+  fact: "misc",
+  preference: "constraint",
+  skill: "skill",
+  misc: "misc",
+};
+
+/** 多类型取最慢衰减：半衰期取集合里最长的那个。空集合按 misc。 */
+export function slowestHalfLife(entryKinds: string[]): number {
+  let max = 0;
+  for (const k of entryKinds) {
+    const mk = ENTRY_KIND_TO_MEMORY_KIND[k] ?? "misc";
+    max = Math.max(max, HALF_LIFE_DAYS[mk]);
+  }
+  return max || HALF_LIFE_DAYS.misc;
+}
+
+/** 多类型新鲜度：按最慢半衰期衰减。 */
+export function freshnessFromAgeMulti(daysOld: number, entryKinds: string[]): number {
+  const d = Math.max(0, daysOld);
+  return clampScore(100 * Math.pow(0.5, d / slowestHalfLife(entryKinds)));
+}
+
+// 条目库的来源四类映射确定性：用户 > AI建议 > AI推论 > 三方；三方已校验可上调。
+export function certaintyFromEntrySource(
+  source: string,
+  truthiness?: "verified" | "unverified"
+): number {
+  switch (source) {
+    case "user":
+      return 90;
+    case "ai_suggestion":
+      return 50;
+    case "ai_inference":
+      return 40;
+    case "third_party":
+      return truthiness === "verified" ? 55 : 30;
+    default:
+      return NEUTRAL_SCORE;
+  }
+}
+
+/**
+ * 条目级合成分：用条目的真实标签算四因子。
+ * daysOld 距最后更新天数、activity 活跃度 0–100 由调用方给，缺省中性。
+ */
+export function scoreEntry(
+  e: { kinds: string[]; source: string; truthiness?: "verified" | "unverified"; weight?: number },
+  daysOld: number,
+  activity = NEUTRAL_SCORE
+): number {
+  if (e.weight !== undefined) return clampScore(e.weight); // 手动分优先
+  return composeScore({
+    importance: e.source === "user" ? 70 : NEUTRAL_SCORE,
+    freshness: freshnessFromAgeMulti(daysOld, e.kinds),
+    activity,
+    certainty: certaintyFromEntrySource(e.source, e.truthiness),
+  });
+}
+
 /** 确定性：来源类型映射（点40 三方默认低，真实性校验后可由调用方调高）。 */
 export function certaintyFromSource(source: SourceKind): number {
   switch (source) {
