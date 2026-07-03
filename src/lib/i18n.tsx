@@ -257,6 +257,10 @@ const DICT: Record<string, Entry> = {
     zh: "把「{name}」现有的项目说明和决策记录整理成一页记忆卡片；原文件保留为历史档案",
     en: "Distill '{name}''s existing context and decisions into one page of Memory Cards; old files stay as archive",
   },
+  "fileViewer.overBudget": {
+    zh: "记忆卡片已 {n} 字，超过 1200 字预算，AI 开场注入会太长。建议整理或精简，不影响保存。",
+    en: "Memory Cards at {n} chars, over the 1200 budget — the session-start injection gets too long. Consider tidying; saving still works.",
+  },
   "entryLib.open": { zh: "记忆库", en: "Memory Library" },
   "entryLib.back": { zh: "返回", en: "Back" },
   "entryLib.userView": { zh: "给我看", en: "For me" },

@@ -5,6 +5,7 @@ import type { SourceTool } from "../types";
 import { tintFor } from "../lib/sourceTools";
 import MarkdownLite from "./MarkdownLite";
 import { useT } from "../lib/i18n";
+import { cardsCharCount, CARDS_BUDGET_CHARS } from "../lib/cards";
 
 type SessionMeta = {
   date: string;
@@ -48,6 +49,12 @@ export default function FileViewerModal({
   };
 
   const isDirty = draft !== content;
+
+  // 字符超限提示（06-11 与 06-21 确认的固定规则）：只对记忆卡片生效，
+  // 编辑时按草稿实时算，超 1200 字提醒精简，不拦截保存。
+  const isCards = fullPath.endsWith("cards.md");
+  const cardChars = isCards ? cardsCharCount(editing ? draft : content) : 0;
+  const overBudget = isCards && cardChars > CARDS_BUDGET_CHARS;
 
   return (
     <div
@@ -102,6 +109,12 @@ export default function FileViewerModal({
               {sessionMeta.sourceTool}
             </span>
             <span className="text-ink flex-1 truncate">{sessionMeta.sessionGoal}</span>
+          </div>
+        )}
+
+        {overBudget && (
+          <div className="mx-6 mt-3 px-4 py-2.5 bg-[#FFF5E1] border border-[#EAD9A8] rounded-lg text-[13px] text-[#A37A1C] shrink-0">
+            {t("fileViewer.overBudget", { n: cardChars })}
           </div>
         )}
 
