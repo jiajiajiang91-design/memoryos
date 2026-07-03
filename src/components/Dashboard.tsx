@@ -26,6 +26,8 @@ type Props = {
   onMigrateCards: () => void;
   /** 正文记忆卡片区的「编辑」→ 打开 cards.md 查看/编辑。 */
   onEditCards: () => void;
+  /** 记忆库（条目双视图，记忆展示形态第 1 轮）。 */
+  onOpenEntryLib: () => void;
   /** 信任模式开关（06-10 用户拍板）。 */
   onToggleTrustMode: () => void;
   /** Inbox 里 status=pending 的条数；>0 时显示「待审」入口。 */
@@ -112,6 +114,13 @@ export default function Dashboard(props: Props) {
               >
                 <Copy size={16} strokeWidth={1.5} />
                 {t("dashboard.copyEndPrompt")}
+              </button>
+              <button
+                onClick={props.onOpenEntryLib}
+                className="h-10 px-4 rounded-lg bg-surface border border-hairline shadow-btn text-ink font-medium text-sm inline-flex items-center gap-2 hover:border-slate/40 hover:text-slate hover:-translate-y-px hover:shadow-btn-hover transition-all"
+              >
+                <LayoutGrid size={16} strokeWidth={1.5} />
+                {t("entryLib.open")}
               </button>
               {props.pendingInboxCount > 0 && (
                 <button

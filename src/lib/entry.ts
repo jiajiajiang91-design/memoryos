@@ -235,6 +235,63 @@ function sameKinds(a: EntryKind[], b: EntryKind[]): boolean {
   return sa.every((k, i) => k === sb[i]);
 }
 
+// ── AI 视图注入拼装（双视图之一：按权重挑条目，1200 字内）─────────
+
+export const INJECTION_BUDGET_CHARS = 1200;
+
+/** 预算用字数：去掉所有空白后的字符数，与 cards.ts 的口径一致。 */
+export function entryCharCount(text: string): number {
+  return text.replace(/\s/g, "").length;
+}
+
+export type InjectionResult = {
+  text: string;
+  charCount: number;
+  includedIds: string[];
+  droppedIds: string[]; // 预算装不下被舍弃的条目，供界面提示
+};
+
+/**
+ * 把条目拼成给 AI 的注入文本。类型分区块，区块内按权重从高到低，
+ * 权重缺省按 50 算；超预算的条目舍弃并记录。纯函数，不碰真实注入链路。
+ */
+export function buildInjectionFromEntries(
+  entries: MemoryEntry[],
+  budget = INJECTION_BUDGET_CHARS
+): InjectionResult {
+  const w = (e: MemoryEntry) => e.weight ?? 50;
+  const grouped = {} as Record<EntryKind, MemoryEntry[]>;
+  for (const k of ALL_KINDS) grouped[k] = [];
+  for (const e of entries) grouped[kindsOf(e)[0]].push(e);
+
+  const lines: string[] = [];
+  const includedIds: string[] = [];
+  const droppedIds: string[] = [];
+  let used = 0;
+  for (const k of ALL_KINDS) {
+    const pool = [...grouped[k]].sort((a, b) => w(b) - w(a));
+    let headerWritten = false;
+    for (const e of pool) {
+      const line = `- ${e.text}`;
+      const header = headerWritten ? "" : `## ${KIND_LABELS[k]}`;
+      const cost = entryCharCount(line) + (header ? entryCharCount(header) : 0);
+      if (used + cost > budget) {
+        droppedIds.push(e.id);
+        continue;
+      }
+      if (header) {
+        lines.push(header);
+        headerWritten = true;
+      }
+      lines.push(line);
+      used += cost;
+      includedIds.push(e.id);
+    }
+  }
+  const text = lines.join("\n");
+  return { text, charCount: entryCharCount(text), includedIds, droppedIds };
+}
+
 // ── 存储序列化（jsonl，一条一行；坏行隔离不连累其他条目）──────────
 
 /** 条目集合序列化成 jsonl，一条一行，稳定可差异比对。 */

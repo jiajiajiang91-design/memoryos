@@ -31,7 +31,11 @@ import {
   appendRejectedSuggestion,
   setProjectTrustMode,
   autoApplyTrustedInbox,
+  readEntriesLib,
+  writeEntriesLib,
 } from "./lib/fs";
+import { migrateCardsToEntries, type MemoryEntry } from "./lib/entry";
+import EntryLibraryPage from "./components/EntryLibraryPage";
 import { ask } from "@tauri-apps/api/dialog";
 import { buildStartSessionPrompt } from "./lib/parser";
 import { stampCards, adoptSuggestionsIntoCards } from "./lib/cards";
@@ -155,6 +159,8 @@ export default function App() {
   const [setupOpen, setSetupOpen] = useState(false);
   const [setupPath, setSetupPath] = useState<string>("");
   const [viewingSession, setViewingSession] = useState<string | null>(null);
+  // 记忆库双视图（记忆展示形态第 1 轮）：null=未打开
+  const [entryLib, setEntryLib] = useState<{ entries: MemoryEntry[]; badLineCount: number } | null>(null);
   const [viewingCoreFile, setViewingCoreFile] = useState<
     null | { filename: string; fullPath: string; content: string; rawFile: string }
   >(null);
@@ -451,6 +457,21 @@ export default function App() {
   };
 
   // 取消 = 保留 pending（不动 inbox 文件），用户可稍后从「待审」继续。
+  // 记忆库：打开时读项目条目库；空库且有卡片时可一键把六卡整理成条目（机械迁移第一版）。
+  const openEntryLib = async () => {
+    if (!workspace || !project) return;
+    const r = await readEntriesLib(workspace, { kind: "project", slug: project.slug });
+    setEntryLib({ entries: r.entries, badLineCount: r.badLines.length });
+  };
+  const onMigrateEntries = async () => {
+    if (!workspace || !project) return;
+    const today = new Date().toISOString().slice(0, 10);
+    const migrated = migrateCardsToEntries(project.cardsMarkdown, project.slug, today);
+    await writeEntriesLib(workspace, { kind: "project", slug: project.slug }, migrated);
+    setEntryLib({ entries: migrated, badLineCount: 0 });
+    showToast(t("entryLib.migrateDone", { n: migrated.length }));
+  };
+
   const onReviewCancel = async () => {
     setReview(null);
     await refreshPending();
@@ -628,7 +649,7 @@ export default function App() {
         sessionsCount={project?.sessions.length ?? 0}
         hasCards={!!project?.cardsMarkdown.trim()}
         mcpState={mcpState}
-        onSelectProject={(slug) => { setCurrentSlug(slug); setReview(null); }}
+        onSelectProject={(slug) => { setCurrentSlug(slug); setReview(null); setEntryLib(null); }}
         onNewProject={() => setNewProjectOpen(true)}
         onRefreshProjects={() => {
           setRefreshKey((k) => k + 1);
@@ -684,6 +705,15 @@ export default function App() {
           onDiscard={review.inboxFilename ? onReviewDiscard : undefined}
           channel={review.channel}
         />
+      ) : entryLib && project ? (
+        <EntryLibraryPage
+          projectName={project.name}
+          entries={entryLib.entries}
+          badLineCount={entryLib.badLineCount}
+          onBack={() => setEntryLib(null)}
+          canMigrate={!!project.cardsMarkdown.trim()}
+          onMigrate={onMigrateEntries}
+        />
       ) : project ? (
         <Dashboard
           project={project}
@@ -710,6 +740,7 @@ export default function App() {
           onOpenBootstrap={() => setBootstrapOpen(true)}
           onMigrateCards={() => setMigrateCardsOpen(true)}
           onEditCards={() => openCoreFile("cards.md")}
+          onOpenEntryLib={openEntryLib}
           onToggleTrustMode={async () => {
             if (!workspace || !project) return;
             const next = !project.mcpAutoApply;

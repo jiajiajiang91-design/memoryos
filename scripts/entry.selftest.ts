@@ -14,6 +14,8 @@ import {
   migrateCardsToEntries,
   toJsonl,
   fromJsonl,
+  buildInjectionFromEntries,
+  entryCharCount,
   type MemoryEntry,
   type EntryKind,
 } from "../src/lib/entry";
@@ -153,6 +155,20 @@ eq(noId.badLines, [1], "缺 id 算坏行");
 const legacy = fromJsonl('{"id":"m-0001","text":"旧条目","kinds":["fact"],"scopes":["p"],"source":"user","createdAt":"2026-01-01","updatedAt":"2026-01-01"}\n');
 eq(legacy.entries[0].modality, "text", "旧数据补默认模态");
 eq(legacy.entries[0].relations, [], "旧数据补空关联");
+
+console.log("\n[J] AI 视图注入拼装");
+const hi = mk({ id: "m-0101", text: "重要决策", kinds: ["decision"], weight: 90 });
+const lo = mk({ id: "m-0102", text: "次要决策", kinds: ["decision"], weight: 10 });
+const st = mk({ id: "m-0103", text: "一个状态", kinds: ["state"] });
+const inj = buildInjectionFromEntries([lo, st, hi]);
+ok(inj.text.indexOf("重要决策") < inj.text.indexOf("次要决策"), "区块内按权重高在前");
+ok(inj.text.indexOf("## 决策") < inj.text.indexOf("## 状态"), "按八类顺序分区块");
+eq(inj.droppedIds, [], "预算内无舍弃");
+eq(inj.charCount, entryCharCount(inj.text), "字数口径一致");
+// 预算收紧时低权重被舍弃且记录
+const tiny = buildInjectionFromEntries([lo, hi], 12);
+ok(tiny.includedIds.includes("m-0101") && tiny.droppedIds.includes("m-0102"), "超预算舍低权重并记录");
+ok(tiny.charCount <= 12, "拼装结果不超预算");
 
 console.log(`\n结果：${pass} passed, ${fail} failed\n`);
 if (fail > 0) process.exit(1);
