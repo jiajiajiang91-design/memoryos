@@ -89,6 +89,11 @@ export type MemoryEntry = {
   weight?: number;
   /** 钉住：永不自动降权、永不自动归档（权重模块 A5 确认）。 */
   pinned?: boolean;
+  /**
+   * 归档状态。空 = 在现行层。红线2：作废归档和降权归档原因分开记，
+   * superseded 内容被替代、lowWeight 权重过低、manual 手动。捞回 = 清掉此字段。
+   */
+  archived?: { reason: "superseded" | "lowWeight" | "manual"; at: string };
   modality: Modality;
   relations: EntryRelation[];
   createdAt: string;
@@ -261,6 +266,8 @@ export function buildInjectionFromEntries(
   entries: MemoryEntry[],
   budget = INJECTION_BUDGET_CHARS
 ): InjectionResult {
+  // 已归档的不进注入：遗忘等于归档，现行层才是给 AI 的。
+  entries = entries.filter((e) => !e.archived);
   // 找出关系并输出（知识图谱起步）：被高权重条目关联的目标，挑选时加分，
   // 让相关的记忆倾向一起入选，而不是各排各的。
   const boosted = new Set<string>();

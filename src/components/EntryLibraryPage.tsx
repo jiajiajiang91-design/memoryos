@@ -4,7 +4,7 @@
 // 切换真实注入链路等六卡迁移完成后再做（设计稿第 9 节 S5 之后）。
 
 import { useMemo, useState } from "react";
-import { ArrowLeft, Bot, User, Sparkles, LayoutGrid, Upload, Download, Search, Link2, Pin } from "lucide-react";
+import { ArrowLeft, Bot, User, Sparkles, LayoutGrid, Upload, Download, Search, Link2, Pin, Archive, Undo2 } from "lucide-react";
 import { toTier, scoreEntry, type Tier } from "../lib/weight";
 import {
   ALL_KINDS,
@@ -76,7 +76,10 @@ export default function EntryLibraryPage(props: Props) {
       (e) => e.text.toLowerCase().includes(q) || e.id.toLowerCase().includes(q)
     );
   }, [props.entries, query]);
-  const grouped = useMemo(() => groupByKind(filtered), [filtered]);
+  // 现行层进八类分组；已归档单独一区，捞回即回现行层
+  const active = useMemo(() => filtered.filter((e) => !e.archived), [filtered]);
+  const archivedList = useMemo(() => filtered.filter((e) => e.archived), [filtered]);
+  const grouped = useMemo(() => groupByKind(active), [active]);
   const injection = useMemo(() => buildInjectionFromEntries(props.entries), [props.entries]);
 
   return (
@@ -236,6 +239,19 @@ export default function EntryLibraryPage(props: Props) {
                           >
                             <Pin size={11} strokeWidth={1.5} />
                           </button>
+                          {!e.pinned && (
+                            <button
+                              onClick={() =>
+                                props.onUpdateEntry(e.id, {
+                                  archived: { reason: "manual", at: new Date().toISOString().slice(0, 10) },
+                                })
+                              }
+                              title={t("entryLib.archiveHint")}
+                              className="p-1 rounded-full text-ink-faint hover:text-ink transition-colors"
+                            >
+                              <Archive size={11} strokeWidth={1.5} />
+                            </button>
+                          )}
                           {e.kinds.map((kk) => (
                             <span key={kk} className={`px-2 py-0.5 rounded-full text-[11px] ${KIND_TINT[kk]}`}>
                               {KIND_LABELS[kk]}
@@ -263,6 +279,42 @@ export default function EntryLibraryPage(props: Props) {
                   </div>
                 </section>
               )
+            )}
+            {archivedList.length > 0 && (
+              <section className="pt-4 border-t border-hairline">
+                <h2 className="text-[13px] font-semibold text-ink-faint mb-3 tracking-wide inline-flex items-center gap-1.5">
+                  <Archive size={13} strokeWidth={1.5} />
+                  {t("entryLib.archivedSection")}
+                  <span className="font-normal">{archivedList.length}</span>
+                </h2>
+                <div className="space-y-2">
+                  {archivedList.map((e) => (
+                    <div
+                      key={`arch-${e.id}`}
+                      className="px-4 py-3 rounded-xl border border-dashed border-hairline flex items-start gap-3 opacity-70"
+                    >
+                      <span className="text-[11px] text-ink-faint font-display mt-0.5 shrink-0">{e.id}</span>
+                      <p className="text-[14px] text-ink-soft leading-relaxed flex-1 min-w-0">{e.text}</p>
+                      <span className="flex gap-1.5 shrink-0 items-center">
+                        <span className="px-2 py-0.5 rounded-full text-[11px] bg-[#F0F1F3] text-[#5A6070]">
+                          {e.archived?.reason === "superseded"
+                            ? t("entryLib.reasonSuperseded")
+                            : e.archived?.reason === "lowWeight"
+                              ? t("entryLib.reasonLowWeight")
+                              : t("entryLib.reasonManual")}
+                          {e.archived?.at ? ` · ${e.archived.at}` : ""}
+                        </span>
+                        <button
+                          onClick={() => props.onUpdateEntry(e.id, { archived: undefined })}
+                          className="px-2.5 py-1 rounded-lg border border-hairline text-[12px] text-ink-soft inline-flex items-center gap-1 hover:text-ink hover:border-slate/40 transition-colors"
+                        >
+                          <Undo2 size={11} strokeWidth={1.5} /> {t("entryLib.reclaim")}
+                        </button>
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </section>
             )}
           </div>
         ) : (

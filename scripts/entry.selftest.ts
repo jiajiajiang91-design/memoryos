@@ -179,5 +179,17 @@ ok(rel.includedIds.includes("m-0202") && !rel.includedIds.includes("m-0203"), "�
 const pinBack = fromJsonl(toJsonl([mk({ id: "m-0301", text: "钉住的", weight: 80, pinned: true })]));
 ok(pinBack.entries[0].pinned === true && pinBack.entries[0].weight === 80, "钉住和手动分随存储往返保留");
 
+console.log("\n[K] 归档与捞回");
+const archived = mk({ id: "m-0401", text: "已归档的", kinds: ["state"], weight: 95, archived: { reason: "manual", at: "2026-07-04" } });
+const activeE = mk({ id: "m-0402", text: "现行的", kinds: ["state"], weight: 10 });
+const injArch = buildInjectionFromEntries([archived, activeE]);
+ok(!injArch.includedIds.includes("m-0401"), "已归档的不进注入，哪怕权重高");
+ok(injArch.includedIds.includes("m-0402"), "现行的正常进注入");
+const archBack = fromJsonl(toJsonl([archived]));
+eq(archBack.entries[0].archived?.reason, "manual", "归档原因随存储往返保留");
+// 捞回 = 清掉归档字段后重新进注入
+const reclaimed = { ...archived, archived: undefined };
+ok(buildInjectionFromEntries([reclaimed]).includedIds.includes("m-0401"), "捞回后重新进注入");
+
 console.log(`\n结果：${pass} passed, ${fail} failed\n`);
 if (fail > 0) process.exit(1);
