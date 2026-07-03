@@ -87,6 +87,8 @@ export type MemoryEntry = {
   source: SourceKind;
   truthiness?: Truthiness;
   weight?: number;
+  /** 钉住：永不自动降权、永不自动归档（权重模块 A5 确认）。 */
+  pinned?: boolean;
   modality: Modality;
   relations: EntryRelation[];
   createdAt: string;

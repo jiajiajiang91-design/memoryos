@@ -4,7 +4,8 @@
 // 切换真实注入链路等六卡迁移完成后再做（设计稿第 9 节 S5 之后）。
 
 import { useMemo, useState } from "react";
-import { ArrowLeft, Bot, User, Sparkles, LayoutGrid, Upload, Download, Search, Link2 } from "lucide-react";
+import { ArrowLeft, Bot, User, Sparkles, LayoutGrid, Upload, Download, Search, Link2, Pin } from "lucide-react";
+import { toTier, scoreEntry, type Tier } from "../lib/weight";
 import {
   ALL_KINDS,
   KIND_LABELS,
@@ -32,7 +33,22 @@ type Props = {
   /** 当前库：项目、全局、技能，三库平级。 */
   libKind: "project" | "global" | "skill";
   onSwitchLib: (k: "project" | "global" | "skill") => void;
+  /** 单条更新（调档、钉住等），写回当前库。 */
+  onUpdateEntry: (id: string, patch: Partial<MemoryEntry>) => void;
 };
+
+// 三档轮换：高→中→低→高，落成代表分写进 weight（手动分优先于自动算）。
+const TIER_CYCLE: Record<Tier, { next: number; label: "entryLib.tierHigh" | "entryLib.tierMid" | "entryLib.tierLow"; cls: string }> = {
+  high: { next: 50, label: "entryLib.tierHigh", cls: "bg-[#E8EDFF] text-[#002FA7]" },
+  mid: { next: 20, label: "entryLib.tierMid", cls: "bg-[#F0F1F3] text-[#5A6070]" },
+  low: { next: 80, label: "entryLib.tierLow", cls: "bg-[#FDF0F5] text-[#A83A66]" },
+};
+
+/** 条目当前档位：手动分优先，否则按真实标签和新旧算。 */
+function tierOf(e: MemoryEntry): Tier {
+  const daysOld = Math.max(0, Math.floor((Date.now() - new Date(e.updatedAt || e.createdAt).getTime()) / 86400000));
+  return toTier(scoreEntry(e, daysOld));
+}
 
 const KIND_TINT: Record<EntryKind, string> = {
   decision: "bg-[#E8EDFF] text-[#002FA7]",
@@ -198,6 +214,28 @@ export default function EntryLibraryPage(props: Props) {
                         <span className="text-[11px] text-ink-faint font-display mt-0.5 shrink-0">{e.id}</span>
                         <p className="text-[14px] text-ink leading-relaxed flex-1 min-w-0">{e.text}</p>
                         <span className="flex gap-1.5 shrink-0 items-center">
+                          {(() => {
+                            const tier = tierOf(e);
+                            const c = TIER_CYCLE[tier];
+                            return (
+                              <button
+                                onClick={() => props.onUpdateEntry(e.id, { weight: c.next })}
+                                title={t("entryLib.tierHint")}
+                                className={`px-2 py-0.5 rounded-full text-[11px] font-medium hover:opacity-75 transition-opacity ${c.cls}`}
+                              >
+                                {t(c.label)}
+                              </button>
+                            );
+                          })()}
+                          <button
+                            onClick={() => props.onUpdateEntry(e.id, { pinned: !e.pinned })}
+                            title={t("entryLib.pinHint")}
+                            className={`p-1 rounded-full transition-colors ${
+                              e.pinned ? "bg-[#002FA7] text-white" : "text-ink-faint hover:text-ink"
+                            }`}
+                          >
+                            <Pin size={11} strokeWidth={1.5} />
+                          </button>
                           {e.kinds.map((kk) => (
                             <span key={kk} className={`px-2 py-0.5 rounded-full text-[11px] ${KIND_TINT[kk]}`}>
                               {KIND_LABELS[kk]}

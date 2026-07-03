@@ -175,6 +175,9 @@ const linked = mk({ id: "m-0202", text: "被关联者", kinds: ["state"], weight
 const plain = mk({ id: "m-0203", text: "无关条目", kinds: ["state"], weight: 30 });
 const rel = buildInjectionFromEntries([anchor, plain, linked], 20);
 ok(rel.includedIds.includes("m-0202") && !rel.includedIds.includes("m-0203"), "关联目标优先入选");
+// 钉住和手动分随 jsonl 往返保留
+const pinBack = fromJsonl(toJsonl([mk({ id: "m-0301", text: "钉住的", weight: 80, pinned: true })]));
+ok(pinBack.entries[0].pinned === true && pinBack.entries[0].weight === 80, "钉住和手动分随存储往返保留");
 
 console.log(`\n结果：${pass} passed, ${fail} failed\n`);
 if (fail > 0) process.exit(1);

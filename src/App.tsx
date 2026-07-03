@@ -550,6 +550,17 @@ export default function App() {
     }));
   };
 
+  // 单条更新（调档、钉住等）：改一条写回当前库，同一编号处处生效。
+  const onUpdateEntry = async (id: string, patch: Partial<MemoryEntry>) => {
+    if (!workspace || !entryLib) return;
+    const today = new Date().toISOString();
+    const next = entryLib.entries.map((e) =>
+      e.id === id ? { ...e, ...patch, updatedAt: today } : e
+    );
+    await writeEntriesLib(workspace, entryLib.lib, next);
+    setEntryLib({ ...entryLib, entries: next });
+  };
+
   const onReviewCancel = async () => {
     setReview(null);
     await refreshPending();
@@ -797,6 +808,7 @@ export default function App() {
           onMigrate={onMigrateEntries}
           onExportMd={onExportEntriesMd}
           onImportMd={onImportEntriesMd}
+          onUpdateEntry={onUpdateEntry}
         />
       ) : project ? (
         <Dashboard
