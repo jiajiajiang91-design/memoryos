@@ -259,7 +259,14 @@ export function buildInjectionFromEntries(
   entries: MemoryEntry[],
   budget = INJECTION_BUDGET_CHARS
 ): InjectionResult {
-  const w = (e: MemoryEntry) => e.weight ?? 50;
+  // 找出关系并输出（知识图谱起步）：被高权重条目关联的目标，挑选时加分，
+  // 让相关的记忆倾向一起入选，而不是各排各的。
+  const boosted = new Set<string>();
+  for (const e of entries) {
+    if ((e.weight ?? 50) >= 67) for (const r of e.relations) boosted.add(r.to);
+  }
+  const w = (e: MemoryEntry) =>
+    Math.min(100, (e.weight ?? 50) + (boosted.has(e.id) ? 15 : 0));
   const grouped = {} as Record<EntryKind, MemoryEntry[]>;
   for (const k of ALL_KINDS) grouped[k] = [];
   for (const e of entries) grouped[kindsOf(e)[0]].push(e);

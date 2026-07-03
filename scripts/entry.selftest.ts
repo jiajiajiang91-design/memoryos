@@ -169,6 +169,12 @@ eq(inj.charCount, entryCharCount(inj.text), "字数口径一致");
 const tiny = buildInjectionFromEntries([lo, hi], 12);
 ok(tiny.includedIds.includes("m-0101") && tiny.droppedIds.includes("m-0102"), "超预算舍低权重并记录");
 ok(tiny.charCount <= 12, "拼装结果不超预算");
+// 关联加权：被高权重条目关联的目标，紧预算下压过同权重的无关条目
+const anchor = mk({ id: "m-0201", text: "锚点", kinds: ["decision"], weight: 90, relations: [{ to: "m-0202", rel: "related" }] });
+const linked = mk({ id: "m-0202", text: "被关联者", kinds: ["state"], weight: 30 });
+const plain = mk({ id: "m-0203", text: "无关条目", kinds: ["state"], weight: 30 });
+const rel = buildInjectionFromEntries([anchor, plain, linked], 20);
+ok(rel.includedIds.includes("m-0202") && !rel.includedIds.includes("m-0203"), "关联目标优先入选");
 
 console.log(`\n结果：${pass} passed, ${fail} failed\n`);
 if (fail > 0) process.exit(1);
