@@ -4,7 +4,7 @@
 // 切换真实注入链路等六卡迁移完成后再做（设计稿第 9 节 S5 之后）。
 
 import { useMemo, useState } from "react";
-import { ArrowLeft, Bot, User, Sparkles, LayoutGrid, Upload, Download, Search, Link2, Pin, Archive, Undo2 } from "lucide-react";
+import { ArrowLeft, Bot, User, Sparkles, LayoutGrid, Upload, Download, Search, Link2, Pin, Archive, Undo2, Pencil } from "lucide-react";
 import { toTier, scoreEntry, type Tier } from "../lib/weight";
 import {
   ALL_KINDS,
@@ -35,6 +35,8 @@ type Props = {
   onSwitchLib: (k: "project" | "global" | "skill") => void;
   /** 单条更新（调档、钉住等），写回当前库。 */
   onUpdateEntry: (id: string, patch: Partial<MemoryEntry>) => void;
+  /** 跨库移动：换归属，编号在目标库重发。 */
+  onMoveEntry: (id: string, target: "project" | "global" | "skill") => void;
 };
 
 // 三档轮换：高→中→低→高，落成代表分写进 weight（手动分优先于自动算）。
@@ -68,6 +70,8 @@ export default function EntryLibraryPage(props: Props) {
   const [importText, setImportText] = useState("");
   const [importBusy, setImportBusy] = useState(false);
   const [query, setQuery] = useState("");
+  // 标签编辑器：展开中的条目编号，null 为收起（记忆可换框）
+  const [editingId, setEditingId] = useState<string | null>(null);
   // 关键词检索：搜正文和编号，直面混乱性痛点的第一版
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -210,10 +214,8 @@ export default function EntryLibraryPage(props: Props) {
                   </h2>
                   <div className="space-y-2">
                     {grouped[k].map((e) => (
-                      <div
-                        key={`${k}-${e.id}`}
-                        className="px-4 py-3 rounded-xl border border-hairline bg-surface-soft flex items-start gap-3"
-                      >
+                      <div key={`${k}-${e.id}`} className="rounded-xl border border-hairline bg-surface-soft">
+                      <div className="px-4 py-3 flex items-start gap-3">
                         <span className="text-[11px] text-ink-faint font-display mt-0.5 shrink-0">{e.id}</span>
                         <p className="text-[14px] text-ink leading-relaxed flex-1 min-w-0">{e.text}</p>
                         <span className="flex gap-1.5 shrink-0 items-center">
@@ -267,13 +269,65 @@ export default function EntryLibraryPage(props: Props) {
                             </span>
                           )}
                           {e.source === "third_party" && (
-                            <span className={`px-2 py-0.5 rounded-full text-[11px] ${
-                              e.truthiness === "verified" ? "bg-[#E6F5EC] text-[#1E7A46]" : "bg-[#FFF5E1] text-[#A37A1C]"
-                            }`}>
+                            <button
+                              onClick={() =>
+                                props.onUpdateEntry(e.id, {
+                                  truthiness: e.truthiness === "verified" ? "unverified" : "verified",
+                                })
+                              }
+                              className={`px-2 py-0.5 rounded-full text-[11px] hover:opacity-75 transition-opacity ${
+                                e.truthiness === "verified" ? "bg-[#E6F5EC] text-[#1E7A46]" : "bg-[#FFF5E1] text-[#A37A1C]"
+                              }`}
+                            >
                               {e.truthiness === "verified" ? t("entryLib.truthVerified") : t("entryLib.truthUnverified")}
-                            </span>
+                            </button>
                           )}
+                          <button
+                            onClick={() => setEditingId(editingId === e.id ? null : e.id)}
+                            title={t("entryLib.editTags")}
+                            className={`p-1 rounded-full transition-colors ${
+                              editingId === e.id ? "bg-slate text-white" : "text-ink-faint hover:text-ink"
+                            }`}
+                          >
+                            <Pencil size={11} strokeWidth={1.5} />
+                          </button>
                         </span>
+                      </div>
+                      {editingId === e.id && (
+                        <div className="px-4 pb-3 pt-1 border-t border-hairline flex flex-wrap items-center gap-1.5">
+                          {ALL_KINDS.map((kk) => {
+                            const on = e.kinds.includes(kk);
+                            return (
+                              <button
+                                key={kk}
+                                onClick={() => {
+                                  if (on && e.kinds.length === 1) return; // 至少留一个类型
+                                  props.onUpdateEntry(e.id, {
+                                    kinds: on ? e.kinds.filter((x) => x !== kk) : [...e.kinds, kk],
+                                  });
+                                }}
+                                className={`px-2.5 py-1 rounded-full text-[11px] border transition-colors ${
+                                  on ? `${KIND_TINT[kk]} border-transparent font-medium` : "border-hairline text-ink-faint hover:text-ink"
+                                }`}
+                              >
+                                {KIND_LABELS[kk]}
+                              </button>
+                            );
+                          })}
+                          <span className="mx-1 h-4 w-px bg-hairline" />
+                          {(["project", "global", "skill"] as const)
+                            .filter((lb) => lb !== props.libKind)
+                            .map((lb) => (
+                              <button
+                                key={lb}
+                                onClick={() => { setEditingId(null); props.onMoveEntry(e.id, lb); }}
+                                className="px-2.5 py-1 rounded-lg text-[11px] border border-hairline text-ink-soft hover:text-ink hover:border-slate/40 transition-colors"
+                              >
+                                {lb === "project" ? t("entryLib.moveToProject") : lb === "global" ? t("entryLib.moveToGlobal") : t("entryLib.moveToSkill")}
+                              </button>
+                            ))}
+                        </div>
+                      )}
                       </div>
                     ))}
                   </div>

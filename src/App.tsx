@@ -561,6 +561,32 @@ export default function App() {
     setEntryLib({ ...entryLib, entries: next });
   };
 
+  // 跨库移动：换归属。目标库重发编号避免撞号，写两个库，源库移除目标库追加。
+  const onMoveEntry = async (id: string, target: "project" | "global" | "skill") => {
+    if (!workspace || !entryLib) return;
+    const entry = entryLib.entries.find((e) => e.id === id);
+    if (!entry) return;
+    const targetLib: EntryLib =
+      target === "project"
+        ? project
+          ? { kind: "project", slug: project.slug }
+          : null!
+        : { kind: target };
+    if (!targetLib) return;
+    const tgt = await readEntriesLib(workspace, targetLib);
+    const newId = nextEntryId(tgt.entries);
+    const today = new Date().toISOString();
+    const scope = target === "project" ? (project?.slug ?? "") : target;
+    await writeEntriesLib(workspace, targetLib, [
+      ...tgt.entries,
+      { ...entry, id: newId, scopes: [scope], updatedAt: today },
+    ]);
+    const remaining = entryLib.entries.filter((e) => e.id !== id);
+    await writeEntriesLib(workspace, entryLib.lib, remaining);
+    setEntryLib({ ...entryLib, entries: remaining });
+    showToast(t("entryLib.moved"));
+  };
+
   const onReviewCancel = async () => {
     setReview(null);
     await refreshPending();
@@ -809,6 +835,7 @@ export default function App() {
           onExportMd={onExportEntriesMd}
           onImportMd={onImportEntriesMd}
           onUpdateEntry={onUpdateEntry}
+          onMoveEntry={onMoveEntry}
         />
       ) : project ? (
         <Dashboard
