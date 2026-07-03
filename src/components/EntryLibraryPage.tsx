@@ -4,7 +4,7 @@
 // 切换真实注入链路等六卡迁移完成后再做（设计稿第 9 节 S5 之后）。
 
 import { useMemo, useState } from "react";
-import { ArrowLeft, Bot, User, Sparkles, LayoutGrid } from "lucide-react";
+import { ArrowLeft, Bot, User, Sparkles, LayoutGrid, Upload, Download } from "lucide-react";
 import {
   ALL_KINDS,
   KIND_LABELS,
@@ -25,6 +25,10 @@ type Props = {
   /** 库为空且项目有记忆卡片时显示整理入口。 */
   canMigrate: boolean;
   onMigrate: () => void;
+  /** 导出 md 到剪贴板，携带或手改用。 */
+  onExportMd: () => void;
+  /** 把改完的 md 按编号对回。 */
+  onImportMd: (md: string) => Promise<void>;
 };
 
 const KIND_TINT: Record<EntryKind, string> = {
@@ -41,6 +45,9 @@ const KIND_TINT: Record<EntryKind, string> = {
 export default function EntryLibraryPage(props: Props) {
   const t = useT();
   const [view, setView] = useState<"user" | "ai">("user");
+  const [importOpen, setImportOpen] = useState(false);
+  const [importText, setImportText] = useState("");
+  const [importBusy, setImportBusy] = useState(false);
   const grouped = useMemo(() => groupByKind(props.entries), [props.entries]);
   const injection = useMemo(() => buildInjectionFromEntries(props.entries), [props.entries]);
 
@@ -98,6 +105,46 @@ export default function EntryLibraryPage(props: Props) {
           </div>
         ) : view === "user" ? (
           <div className="max-w-[808px] space-y-8">
+            <div className="flex gap-2">
+              <button
+                onClick={props.onExportMd}
+                className="h-9 px-3.5 rounded-lg border border-hairline text-[13px] text-ink-soft inline-flex items-center gap-1.5 hover:text-ink hover:border-slate/40 transition-colors"
+              >
+                <Download size={14} strokeWidth={1.5} /> {t("entryLib.exportMd")}
+              </button>
+              <button
+                onClick={() => setImportOpen((v) => !v)}
+                className="h-9 px-3.5 rounded-lg border border-hairline text-[13px] text-ink-soft inline-flex items-center gap-1.5 hover:text-ink hover:border-slate/40 transition-colors"
+              >
+                <Upload size={14} strokeWidth={1.5} /> {t("entryLib.importMd")}
+              </button>
+            </div>
+            {importOpen && (
+              <div className="px-4 py-4 rounded-xl border border-hairline bg-surface-soft space-y-3">
+                <textarea
+                  value={importText}
+                  onChange={(e) => setImportText(e.target.value)}
+                  placeholder={t("entryLib.importPlaceholder")}
+                  className="w-full h-40 px-3 py-2 rounded-lg border border-hairline bg-surface text-[13px] leading-relaxed resize-y focus:outline-none focus:border-slate/50"
+                />
+                <button
+                  disabled={importBusy || !importText.trim()}
+                  onClick={async () => {
+                    setImportBusy(true);
+                    try {
+                      await props.onImportMd(importText);
+                      setImportOpen(false);
+                      setImportText("");
+                    } finally {
+                      setImportBusy(false);
+                    }
+                  }}
+                  className="h-9 px-4 rounded-lg bg-slate text-white text-[13px] font-medium disabled:opacity-40 hover:-translate-y-px transition-all"
+                >
+                  {t("entryLib.importApply")}
+                </button>
+              </div>
+            )}
             {ALL_KINDS.map((k) =>
               grouped[k].length === 0 ? null : (
                 <section key={k}>

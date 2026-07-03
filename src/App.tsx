@@ -34,7 +34,14 @@ import {
   readEntriesLib,
   writeEntriesLib,
 } from "./lib/fs";
-import { migrateCardsToEntries, type MemoryEntry } from "./lib/entry";
+import {
+  migrateCardsToEntries,
+  exportToMarkdown,
+  parseMarkdown,
+  reconcileImport,
+  nextEntryId,
+  type MemoryEntry,
+} from "./lib/entry";
 import EntryLibraryPage from "./components/EntryLibraryPage";
 import { ask } from "@tauri-apps/api/dialog";
 import { buildStartSessionPrompt } from "./lib/parser";
@@ -472,6 +479,65 @@ export default function App() {
     showToast(t("entryLib.migrateDone", { n: migrated.length }));
   };
 
+  // 导出 md：复制到剪贴板，记录导出时间供导回时识别两边都改过的冲突。
+  const [entriesExportedAt, setEntriesExportedAt] = useState<string | null>(null);
+  const onExportEntriesMd = async () => {
+    if (!entryLib || !project) return;
+    await copyToClipboard(exportToMarkdown(entryLib.entries, `记忆库 · ${project.name}`));
+    setEntriesExportedAt(new Date().toISOString());
+    showToast(t("entryLib.exported"));
+  };
+  // 导回 md：按编号对账。删除和两边都改过的都先问，取消则保留。
+  const onImportEntriesMd = async (md: string) => {
+    if (!workspace || !project || !entryLib) return;
+    const plan = reconcileImport(entryLib.entries, parseMarkdown(md), {
+      exportedAt: entriesExportedAt ?? undefined,
+    });
+    if (!plan.updates.length && !plan.adds.length && !plan.deletes.length) {
+      showToast(t("entryLib.importNothing"));
+      return;
+    }
+    let confirmedDeletes = plan.deletes;
+    if (plan.deletes.length > 0) {
+      const okDel = await ask(t("entryLib.confirmDeletes", { n: plan.deletes.length }), {
+        title: t("entryLib.confirmDeletesTitle"), type: "warning",
+      });
+      if (!okDel) confirmedDeletes = [];
+    }
+    let applyConflicts = true;
+    const conflictCount = plan.updates.filter((u) => u.conflict).length;
+    if (conflictCount > 0) {
+      applyConflicts = await ask(t("entryLib.confirmConflicts", { n: conflictCount }), {
+        title: t("entryLib.confirmConflictsTitle"), type: "warning",
+      });
+    }
+    const today = new Date().toISOString();
+    const deleteIds = new Set(confirmedDeletes.map((e) => e.id));
+    const updateById = new Map(
+      plan.updates.filter((u) => applyConflicts || !u.conflict).map((u) => [u.current.id, u])
+    );
+    const next: MemoryEntry[] = entryLib.entries
+      .filter((e) => !deleteIds.has(e.id))
+      .map((e) => {
+        const u = updateById.get(e.id);
+        return u ? { ...e, text: u.text, kinds: u.kinds, updatedAt: today } : e;
+      });
+    const counter: { id: string }[] = [...entryLib.entries];
+    for (const a of plan.adds) {
+      const id = nextEntryId(counter);
+      counter.push({ id });
+      next.push({
+        id, text: a.text, kinds: a.kinds, scopes: [project.slug], source: a.source,
+        modality: "text", relations: [], createdAt: today, updatedAt: today,
+      });
+    }
+    await writeEntriesLib(workspace, { kind: "project", slug: project.slug }, next);
+    setEntryLib({ entries: next, badLineCount: 0 });
+    showToast(t("entryLib.importDone", {
+      u: updateById.size, a: plan.adds.length, d: confirmedDeletes.length,
+    }));
+  };
+
   const onReviewCancel = async () => {
     setReview(null);
     await refreshPending();
@@ -713,6 +779,8 @@ export default function App() {
           onBack={() => setEntryLib(null)}
           canMigrate={!!project.cardsMarkdown.trim()}
           onMigrate={onMigrateEntries}
+          onExportMd={onExportEntriesMd}
+          onImportMd={onImportEntriesMd}
         />
       ) : project ? (
         <Dashboard
