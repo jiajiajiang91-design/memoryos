@@ -618,6 +618,8 @@ export function buildStartSessionPrompt(opts: {
   latestCompactContext: string;
   /** 现行卡全文。非空 = 现行卡模式：开场注入 = 关于我 + 卡片原文（所见即所注），不再拼 context/decisions。 */
   cards?: string;
+  /** 注入来源为条目库时传 false，跳过历史档案卡那句提示（条目注入没有档案卡）。默认 true。 */
+  archiveHint?: boolean;
   lang?: Lang;
 }): string {
   const lang: Lang = opts.lang ?? "zh";
@@ -644,8 +646,10 @@ export function buildStartSessionPrompt(opts: {
       parts.push(`2. The project's goal, current state, and current blocker`);
       parts.push(`3. Where we left off and where this session starts`);
       parts.push(``);
-      parts.push(`The "Archives" card lists deeper records — fetch them only when needed, don't read everything.`);
-      parts.push(``);
+      if (opts.archiveHint !== false) {
+        parts.push(`The "Archives" card lists deeper records — fetch them only when needed, don't read everything.`);
+        parts.push(``);
+      }
       parts.push(`Once confirmed, let's start today's work.`);
       return parts.join("\n");
     }
@@ -667,8 +671,10 @@ export function buildStartSessionPrompt(opts: {
     parts.push(`2. 项目目标、当前状态和当前卡点`);
     parts.push(`3. 上次停在哪里、本次从哪开始`);
     parts.push(``);
-    parts.push(`「历史档案」卡里列了更深的资料，需要时再调取，不要全部读。`);
-    parts.push(``);
+    if (opts.archiveHint !== false) {
+      parts.push(`「历史档案」卡里列了更深的资料，需要时再调取，不要全部读。`);
+      parts.push(``);
+    }
     parts.push(`确认无误后，我们开始今天的工作。`);
     return parts.join("\n");
   }

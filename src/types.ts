@@ -15,6 +15,8 @@ export type ProjectMeta = {
   updatedAt: string;
   /** 信任模式（06-10 用户拍板）：MCP 写回到收件箱后由 app 自动入库，不再逐条确认。默认 false。 */
   mcpAutoApply?: boolean;
+  /** 开场注入使用条目库（07-04 确认）：开了用条目按权重拼的文本，不开仍用记忆卡片。默认 false。 */
+  entryInjection?: boolean;
 };
 
 export type Session = {

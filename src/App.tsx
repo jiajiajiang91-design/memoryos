@@ -30,6 +30,7 @@ import {
   appendDecisionsArchive,
   appendRejectedSuggestion,
   setProjectTrustMode,
+  setProjectEntryInjection,
   autoApplyTrustedInbox,
   readEntriesLib,
   writeEntriesLib,
@@ -42,6 +43,7 @@ import {
   parseMarkdown,
   reconcileImport,
   nextEntryId,
+  buildInjectionFromEntries,
   type MemoryEntry,
 } from "./lib/entry";
 import EntryLibraryPage from "./components/EntryLibraryPage";
@@ -840,6 +842,14 @@ export default function App() {
           onImportMd={onImportEntriesMd}
           onUpdateEntry={onUpdateEntry}
           onMoveEntry={onMoveEntry}
+          entryInjectionOn={project.entryInjection ?? false}
+          onToggleInjection={async () => {
+            if (!workspace || !project) return;
+            const next = !project.entryInjection;
+            await setProjectEntryInjection(workspace, project.slug, next);
+            setRefreshKey((k) => k + 1);
+            showToast(next ? t("entryLib.injectionOnToast") : t("entryLib.injectionOffToast"));
+          }}
         />
       ) : project ? (
         <Dashboard
@@ -850,9 +860,23 @@ export default function App() {
           onCopyStartPrompt={async () => {
             if (!workspace || !project) return;
             const ctx = await readContextForStartPrompt(workspace, project.slug);
+            // 开关开且条目库有现行条目 → 注入用条目按权重拼的文本；否则仍用记忆卡片
+            let cards = ctx.cards;
+            let archiveHint = true;
+            if (project.entryInjection) {
+              const lib = await readEntriesLib(workspace, { kind: "project", slug: project.slug });
+              const activeEntries = lib.entries.filter((e) => !e.archived);
+              if (activeEntries.length) {
+                const inj = buildInjectionFromEntries(activeEntries);
+                cards = `# 记忆条目 · ${project.name}\n\n${inj.text}`;
+                archiveHint = false;
+              }
+            }
             const prompt = buildStartSessionPrompt({
               projectName: project.name,
               ...ctx,
+              cards,
+              archiveHint,
               lang,
             });
             await copyToClipboard(prompt);

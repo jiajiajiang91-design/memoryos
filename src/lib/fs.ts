@@ -206,6 +206,7 @@ export async function listProjects(workspace: string): Promise<ProjectMeta[]> {
       createdAt: meta.createdAt ?? new Date().toISOString(),
       updatedAt: meta.updatedAt ?? new Date().toISOString(),
       mcpAutoApply: meta.mcpAutoApply ?? false,
+      entryInjection: meta.entryInjection ?? false,
     }));
   }
   return out;
@@ -504,6 +505,20 @@ export async function appendRejectedSuggestion(
 export async function readRejectedSuggestions(workspace: string, slug: string): Promise<string> {
   const path = await join(workspace, "projects", slug, "rejected.md");
   return (await exists(path)) ? await readTextFile(path) : "";
+}
+
+/** 开场注入来源开关（07-04 确认）：写 project.json 的 entryInjection。 */
+export async function setProjectEntryInjection(
+  workspace: string,
+  slug: string,
+  on: boolean
+): Promise<void> {
+  const metaPath = await join(workspace, "projects", slug, "project.json");
+  if (!(await exists(metaPath))) throw new Error(tSync("error.projectNotFound"));
+  const meta = JSON.parse(await readTextFile(metaPath));
+  meta.entryInjection = on;
+  meta.updatedAt = new Date().toISOString();
+  await writeTextFile(metaPath, JSON.stringify(meta, null, 2));
 }
 
 /** 信任模式开关（06-10 用户拍板）：写 project.json 的 mcpAutoApply。 */

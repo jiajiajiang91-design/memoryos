@@ -37,6 +37,9 @@ type Props = {
   onUpdateEntry: (id: string, patch: Partial<MemoryEntry>) => void;
   /** 跨库移动：换归属，编号在目标库重发。 */
   onMoveEntry: (id: string, target: "project" | "global" | "skill") => void;
+  /** 开场注入来源开关：开了用条目库，关了用记忆卡片（07-04 确认）。 */
+  entryInjectionOn: boolean;
+  onToggleInjection: () => void;
 };
 
 // 三档轮换：高→中→低→高，落成代表分写进 weight（手动分优先于自动算）。
@@ -419,7 +422,22 @@ export default function EntryLibraryPage(props: Props) {
                 <span className="text-[#A37A1C]">{t("entryLib.dropped", { n: injection.droppedIds.length })}</span>
               )}
             </div>
-            <p className="text-[13px] text-ink-faint mb-4 leading-relaxed">{t("entryLib.aiViewHint")}</p>
+            <button
+              onClick={props.onToggleInjection}
+              className={`mb-3 h-9 px-4 rounded-lg text-[13px] font-medium inline-flex items-center gap-2 border transition-colors ${
+                props.entryInjectionOn
+                  ? "bg-slate text-white border-transparent"
+                  : "border-hairline text-ink-soft hover:text-ink hover:border-slate/40"
+              }`}
+            >
+              <span className={`w-8 h-4 rounded-full relative transition-colors ${props.entryInjectionOn ? "bg-white/30" : "bg-hairline"}`}>
+                <span className={`absolute top-0.5 w-3 h-3 rounded-full bg-white shadow transition-all ${props.entryInjectionOn ? "left-4" : "left-0.5"}`} />
+              </span>
+              {t("entryLib.injectionToggle")}
+            </button>
+            <p className="text-[13px] text-ink-faint mb-4 leading-relaxed">
+              {props.entryInjectionOn ? t("entryLib.aiViewHintLive") : t("entryLib.aiViewHint")}
+            </p>
             <pre className="px-5 py-4 rounded-xl border border-hairline bg-surface-soft text-[13px] leading-relaxed whitespace-pre-wrap text-ink">
               {injection.text || "—"}
             </pre>
