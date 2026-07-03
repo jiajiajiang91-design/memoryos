@@ -29,6 +29,9 @@ type Props = {
   onExportMd: () => void;
   /** 把改完的 md 按编号对回。 */
   onImportMd: (md: string) => Promise<void>;
+  /** 当前库：项目、全局、技能，三库平级。 */
+  libKind: "project" | "global" | "skill";
+  onSwitchLib: (k: "project" | "global" | "skill") => void;
 };
 
 const KIND_TINT: Record<EntryKind, string> = {
@@ -62,7 +65,20 @@ export default function EntryLibraryPage(props: Props) {
         </button>
         <div className="flex items-center gap-2 text-[15px] font-semibold text-ink">
           <LayoutGrid size={16} strokeWidth={1.5} className="text-slate" />
-          {t("entryLib.open")} · {props.projectName}
+          {t("entryLib.open")} · {props.libKind === "project" ? props.projectName : props.libKind === "global" ? t("entryLib.libGlobal") : t("entryLib.libSkill")}
+        </div>
+        <div className="flex rounded-lg border border-hairline overflow-hidden text-[12px]">
+          {(["project", "global", "skill"] as const).map((k) => (
+            <button
+              key={k}
+              onClick={() => props.onSwitchLib(k)}
+              className={`h-8 px-3 transition-colors ${
+                props.libKind === k ? "bg-surface-soft text-ink font-medium" : "text-ink-faint hover:text-ink"
+              }`}
+            >
+              {k === "project" ? t("entryLib.libProject") : k === "global" ? t("entryLib.libGlobal") : t("entryLib.libSkill")}
+            </button>
+          ))}
         </div>
         <div className="ml-auto flex rounded-lg border border-hairline overflow-hidden text-sm">
           <button
@@ -169,6 +185,13 @@ export default function EntryLibraryPage(props: Props) {
                           <span className="px-2 py-0.5 rounded-full text-[11px] bg-[#F0F1F3] text-[#5A6070]">
                             {SOURCE_LABELS[e.source]}
                           </span>
+                          {e.source === "third_party" && (
+                            <span className={`px-2 py-0.5 rounded-full text-[11px] ${
+                              e.truthiness === "verified" ? "bg-[#E6F5EC] text-[#1E7A46]" : "bg-[#FFF5E1] text-[#A37A1C]"
+                            }`}>
+                              {e.truthiness === "verified" ? t("entryLib.truthVerified") : t("entryLib.truthUnverified")}
+                            </span>
+                          )}
                         </span>
                       </div>
                     ))}
