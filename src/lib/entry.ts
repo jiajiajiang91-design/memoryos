@@ -68,6 +68,17 @@ const LABEL_TO_SOURCE: Readonly<Record<string, SourceKind>> = Object.fromEntries
 // 真实性，只三方用。
 export type Truthiness = "verified" | "unverified";
 
+// 模态。记忆本质是多模态的，现阶段只有文字一种取值，为声音图像等预留结构。
+export type Modality = "text";
+
+// 关联，知识图谱的边：这条和另一条是什么关系。现阶段可空，第 4 轮起步填。
+// rel 取值先留三种：related 相关、from_same_session 同次对话产生、supersedes 取代。
+export type EntryRelation = {
+  to: string; // 目标条目 id
+  rel: "related" | "from_same_session" | "supersedes";
+  note?: string;
+};
+
 export type MemoryEntry = {
   id: string;
   text: string;
@@ -76,6 +87,8 @@ export type MemoryEntry = {
   source: SourceKind;
   truthiness?: Truthiness;
   weight?: number;
+  modality: Modality;
+  relations: EntryRelation[];
   createdAt: string;
   updatedAt: string;
 };
@@ -267,6 +280,8 @@ export function migrateCardsToEntries(
       kinds: [curKind],
       scopes: [scope],
       source: "user",
+      modality: "text",
+      relations: [],
       createdAt: now,
       updatedAt: now,
     });

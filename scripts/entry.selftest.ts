@@ -31,6 +31,8 @@ function mk(p: Partial<MemoryEntry> & { id: string; text: string }): MemoryEntry
     kinds: p.kinds ?? ["misc"],
     scopes: p.scopes ?? ["proj"],
     source: p.source ?? "user",
+    modality: p.modality ?? "text",
+    relations: p.relations ?? [],
     createdAt: p.createdAt ?? "2026-06-28",
     updatedAt: p.updatedAt ?? "2026-06-28",
     ...p,
@@ -113,6 +115,18 @@ eq(migrated.filter((e) => e.kinds[0] === "state").length, 2, "当前状态两行
 eq(migrated.find((e) => e.text === "不联网")!.kinds, ["decision"], "约束与决策进决策类");
 eq(migrated[0].id, "m-0001", "迁移从 m-0001 发号");
 ok(migrated.every((e) => e.scopes[0] === "memoryos" && e.source === "user"), "归属和来源正确");
+
+console.log("\n[H] 模态和关联字段预留");
+ok(migrated.every((e) => e.modality === "text"), "迁移条目模态为文字");
+ok(migrated.every((e) => Array.isArray(e.relations) && e.relations.length === 0), "迁移条目关联为空集合");
+const withRel = mk({ id: "m-0009", text: "带关联", relations: [{ to: "m-0001", rel: "related" }] });
+eq(withRel.relations[0].to, "m-0001", "关联指向目标编号");
+const gRel = groupByKind([withRel]);
+eq(gRel.misc.map((x) => x.id), ["m-0009"], "带关联条目分组不受影响");
+const mdRel = exportToMarkdown([withRel]);
+ok(!mdRel.includes("m-0001]") || mdRel.includes("[m-0009]"), "导出 md 不外泄关联结构");
+const planRel = reconcileImport([withRel], parseMarkdown(exportToMarkdown([withRel])));
+eq(planRel.updates.length + planRel.adds.length + planRel.deletes.length, 0, "带关联条目导出导回不变");
 
 console.log(`\n结果：${pass} passed, ${fail} failed\n`);
 if (fail > 0) process.exit(1);
