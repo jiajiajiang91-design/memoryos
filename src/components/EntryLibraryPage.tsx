@@ -32,9 +32,9 @@ type Props = {
   onImportMd: (md: string) => Promise<void>;
   /** 复制 AI 整理提示词：导出 md 包上调标签提关联的指令。 */
   onCopyRefinePrompt: () => void;
-  /** 当前库：项目、全局、技能，三库平级。 */
-  libKind: "project" | "global" | "skill";
-  onSwitchLib: (k: "project" | "global" | "skill") => void;
+  /** 当前库：项目、全局、技能三库平级；全部 = 跨库只读回顾。 */
+  libKind: "project" | "global" | "skill" | "all";
+  onSwitchLib: (k: "project" | "global" | "skill" | "all") => void;
   /** 单条更新（调档、钉住等），写回当前库。 */
   onUpdateEntry: (id: string, patch: Partial<MemoryEntry>) => void;
   /** 跨库移动：换归属，编号在目标库重发。 */
@@ -121,6 +121,9 @@ export default function EntryLibraryPage(props: Props) {
   const archivedList = useMemo(() => filtered.filter((e) => e.archived), [filtered]);
   const grouped = useMemo(() => groupByKind(active), [active]);
   const injection = useMemo(() => buildInjectionFromEntries(props.entries), [props.entries]);
+  // 全部 = 跨库只读回顾：三库编号各自独立会撞号，合并视图不提供编辑
+  const readOnly = props.libKind === "all";
+  const effectiveView = readOnly ? "user" : view;
 
   return (
     <div className="flex-1 flex flex-col min-w-0 bg-surface rounded-2xl shadow-panel overflow-hidden">
@@ -133,10 +136,10 @@ export default function EntryLibraryPage(props: Props) {
         </button>
         <div className="flex items-center gap-2 text-[15px] font-semibold text-ink">
           <LayoutGrid size={16} strokeWidth={1.5} className="text-slate" />
-          {t("entryLib.open")} · {props.libKind === "project" ? props.projectName : props.libKind === "global" ? t("entryLib.libGlobal") : t("entryLib.libSkill")}
+          {t("entryLib.open")} · {props.libKind === "project" ? props.projectName : props.libKind === "global" ? t("entryLib.libGlobal") : props.libKind === "skill" ? t("entryLib.libSkill") : t("entryLib.libAll")}
         </div>
         <div className="flex rounded-lg border border-hairline overflow-hidden text-[12px]">
-          {(["project", "global", "skill"] as const).map((k) => (
+          {(["project", "global", "skill", "all"] as const).map((k) => (
             <button
               key={k}
               onClick={() => props.onSwitchLib(k)}
@@ -144,10 +147,11 @@ export default function EntryLibraryPage(props: Props) {
                 props.libKind === k ? "bg-surface-soft text-ink font-medium" : "text-ink-faint hover:text-ink"
               }`}
             >
-              {k === "project" ? t("entryLib.libProject") : k === "global" ? t("entryLib.libGlobal") : t("entryLib.libSkill")}
+              {k === "project" ? t("entryLib.libProject") : k === "global" ? t("entryLib.libGlobal") : k === "skill" ? t("entryLib.libSkill") : t("entryLib.libAll")}
             </button>
           ))}
         </div>
+        {props.libKind !== "all" && (
         <div className="ml-auto flex rounded-lg border border-hairline overflow-hidden text-sm">
           <button
             onClick={() => setView("user")}
@@ -166,6 +170,7 @@ export default function EntryLibraryPage(props: Props) {
             <Bot size={14} strokeWidth={1.5} /> {t("entryLib.aiView")}
           </button>
         </div>
+        )}
       </div>
 
       <div className="flex-1 overflow-y-auto px-8 py-6">
@@ -187,8 +192,13 @@ export default function EntryLibraryPage(props: Props) {
               </button>
             )}
           </div>
-        ) : view === "user" ? (
+        ) : effectiveView === "user" ? (
           <div className="max-w-[808px] space-y-8">
+            {readOnly && (
+              <div className="px-4 py-2.5 bg-surface-soft border border-hairline rounded-lg text-[13px] text-ink-soft">
+                {t("entryLib.allReadOnly")}
+              </div>
+            )}
             <div className="flex gap-2 items-center">
               <div className="relative flex-1 max-w-[320px]">
                 <Search size={14} strokeWidth={1.5} className="absolute left-3 top-1/2 -translate-y-1/2 text-ink-faint" />
@@ -229,24 +239,28 @@ export default function EntryLibraryPage(props: Props) {
                 <option value="mid">{t("entryLib.tierMid")}</option>
                 <option value="low">{t("entryLib.tierLow")}</option>
               </select>
-              <button
-                onClick={props.onExportMd}
-                className="h-9 px-3.5 rounded-lg border border-hairline text-[13px] text-ink-soft inline-flex items-center gap-1.5 hover:text-ink hover:border-slate/40 transition-colors"
-              >
-                <Download size={14} strokeWidth={1.5} /> {t("entryLib.exportMd")}
-              </button>
-              <button
-                onClick={() => setImportOpen((v) => !v)}
-                className="h-9 px-3.5 rounded-lg border border-hairline text-[13px] text-ink-soft inline-flex items-center gap-1.5 hover:text-ink hover:border-slate/40 transition-colors"
-              >
-                <Upload size={14} strokeWidth={1.5} /> {t("entryLib.importMd")}
-              </button>
-              <button
-                onClick={props.onCopyRefinePrompt}
-                className="h-9 px-3.5 rounded-lg border border-hairline text-[13px] text-ink-soft inline-flex items-center gap-1.5 hover:text-ink hover:border-slate/40 transition-colors"
-              >
-                <Sparkles size={14} strokeWidth={1.5} /> {t("entryLib.refinePrompt")}
-              </button>
+              {!readOnly && (
+                <>
+                  <button
+                    onClick={props.onExportMd}
+                    className="h-9 px-3.5 rounded-lg border border-hairline text-[13px] text-ink-soft inline-flex items-center gap-1.5 hover:text-ink hover:border-slate/40 transition-colors"
+                  >
+                    <Download size={14} strokeWidth={1.5} /> {t("entryLib.exportMd")}
+                  </button>
+                  <button
+                    onClick={() => setImportOpen((v) => !v)}
+                    className="h-9 px-3.5 rounded-lg border border-hairline text-[13px] text-ink-soft inline-flex items-center gap-1.5 hover:text-ink hover:border-slate/40 transition-colors"
+                  >
+                    <Upload size={14} strokeWidth={1.5} /> {t("entryLib.importMd")}
+                  </button>
+                  <button
+                    onClick={props.onCopyRefinePrompt}
+                    className="h-9 px-3.5 rounded-lg border border-hairline text-[13px] text-ink-soft inline-flex items-center gap-1.5 hover:text-ink hover:border-slate/40 transition-colors"
+                  >
+                    <Sparkles size={14} strokeWidth={1.5} /> {t("entryLib.refinePrompt")}
+                  </button>
+                </>
+              )}
             </div>
             {importOpen && (
               <div className="px-4 py-4 rounded-xl border border-hairline bg-surface-soft space-y-3">
@@ -286,12 +300,17 @@ export default function EntryLibraryPage(props: Props) {
                   </h2>
                   <div className="space-y-2">
                     {grouped[k].map((e) => (
-                      <div key={`${k}-${e.id}`} className="rounded-xl border border-hairline bg-surface-soft">
+                      <div key={`${k}-${e.scopes[0] ?? ""}-${e.id}`} className="rounded-xl border border-hairline bg-surface-soft">
                       <div className="px-4 py-3 flex items-start gap-3">
                         <span className="text-[11px] text-ink-faint font-display mt-0.5 shrink-0">{e.id}</span>
                         <p className="text-[14px] text-ink leading-relaxed flex-1 min-w-0">{e.text}</p>
                         <span className="flex gap-1.5 shrink-0 items-center">
-                          {isArchiveCandidate(e) && (
+                          {readOnly && (
+                            <span className="px-2 py-0.5 rounded-full text-[11px] bg-[#F0F1F3] text-[#5A6070]">
+                              {e.scopes[0] === "global" ? t("entryLib.libGlobal") : e.scopes[0] === "skill" ? t("entryLib.libSkill") : e.scopes[0]}
+                            </span>
+                          )}
+                          {!readOnly && isArchiveCandidate(e) && (
                             <button
                               onClick={() =>
                                 props.onUpdateEntry(e.id, {
@@ -307,6 +326,11 @@ export default function EntryLibraryPage(props: Props) {
                           {(() => {
                             const tier = tierOf(e);
                             const c = TIER_CYCLE[tier];
+                            if (readOnly) {
+                              return (
+                                <span className={`px-2 py-0.5 rounded-full text-[11px] font-medium ${c.cls}`}>{t(c.label)}</span>
+                              );
+                            }
                             return (
                               <button
                                 onClick={() => props.onUpdateEntry(e.id, { weight: c.next })}
@@ -317,6 +341,7 @@ export default function EntryLibraryPage(props: Props) {
                               </button>
                             );
                           })()}
+                          {!readOnly && (
                           <button
                             onClick={() => props.onUpdateEntry(e.id, { pinned: !e.pinned })}
                             title={t("entryLib.pinHint")}
@@ -326,7 +351,8 @@ export default function EntryLibraryPage(props: Props) {
                           >
                             <Pin size={11} strokeWidth={1.5} />
                           </button>
-                          {!e.pinned && (
+                          )}
+                          {!readOnly && !e.pinned && (
                             <button
                               onClick={() =>
                                 props.onUpdateEntry(e.id, {
@@ -349,7 +375,7 @@ export default function EntryLibraryPage(props: Props) {
                           </span>
                           {e.relations.length > 0 && (
                             <button
-                              onClick={() => setEditingId(editingId === e.id ? null : e.id)}
+                              onClick={() => !readOnly && setEditingId(editingId === e.id ? null : e.id)}
                               title={e.relations
                                 .map((r) => props.entries.find((x) => x.id === r.to)?.text ?? r.to)
                                 .join(" · ")}
@@ -362,6 +388,7 @@ export default function EntryLibraryPage(props: Props) {
                           {e.source === "third_party" && (
                             <button
                               onClick={() =>
+                                !readOnly &&
                                 props.onUpdateEntry(e.id, {
                                   truthiness: e.truthiness === "verified" ? "unverified" : "verified",
                                 })
@@ -373,6 +400,7 @@ export default function EntryLibraryPage(props: Props) {
                               {e.truthiness === "verified" ? t("entryLib.truthVerified") : t("entryLib.truthUnverified")}
                             </button>
                           )}
+                          {!readOnly && (
                           <button
                             onClick={() => setEditingId(editingId === e.id ? null : e.id)}
                             title={t("entryLib.editTags")}
@@ -382,6 +410,7 @@ export default function EntryLibraryPage(props: Props) {
                           >
                             <Pencil size={11} strokeWidth={1.5} />
                           </button>
+                          )}
                         </span>
                       </div>
                       {editingId === e.id && (
@@ -475,7 +504,7 @@ export default function EntryLibraryPage(props: Props) {
                 <div className="space-y-2">
                   {archivedList.map((e) => (
                     <div
-                      key={`arch-${e.id}`}
+                      key={`arch-${e.scopes[0] ?? ""}-${e.id}`}
                       className="px-4 py-3 rounded-xl border border-dashed border-hairline flex items-start gap-3 opacity-70"
                     >
                       <span className="text-[11px] text-ink-faint font-display mt-0.5 shrink-0">{e.id}</span>
@@ -489,12 +518,14 @@ export default function EntryLibraryPage(props: Props) {
                               : t("entryLib.reasonManual")}
                           {e.archived?.at ? ` · ${e.archived.at}` : ""}
                         </span>
+                        {!readOnly && (
                         <button
                           onClick={() => props.onUpdateEntry(e.id, { archived: undefined })}
                           className="px-2.5 py-1 rounded-lg border border-hairline text-[12px] text-ink-soft inline-flex items-center gap-1 hover:text-ink hover:border-slate/40 transition-colors"
                         >
                           <Undo2 size={11} strokeWidth={1.5} /> {t("entryLib.reclaim")}
                         </button>
+                        )}
                       </span>
                     </div>
                   ))}

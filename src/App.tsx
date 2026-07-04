@@ -171,8 +171,12 @@ export default function App() {
   const [setupOpen, setSetupOpen] = useState(false);
   const [setupPath, setSetupPath] = useState<string>("");
   const [viewingSession, setViewingSession] = useState<string | null>(null);
-  // 记忆库双视图（记忆展示形态第 1 轮）：null=未打开。三库平级：项目、全局、技能。
-  const [entryLib, setEntryLib] = useState<{ lib: EntryLib; entries: MemoryEntry[]; badLineCount: number } | null>(null);
+  // 记忆库双视图（记忆展示形态第 1 轮）：null=未打开。三库平级：项目、全局、技能；all=跨库只读回顾。
+  const [entryLib, setEntryLib] = useState<{
+    lib: EntryLib | { kind: "all" };
+    entries: MemoryEntry[];
+    badLineCount: number;
+  } | null>(null);
   const [viewingCoreFile, setViewingCoreFile] = useState<
     null | { filename: string; fullPath: string; content: string; rawFile: string }
   >(null);
@@ -473,8 +477,25 @@ export default function App() {
 
   // 取消 = 保留 pending（不动 inbox 文件），用户可稍后从「待审」继续。
   // 记忆库：打开时读对应库；项目库为空且有卡片时可一键把六卡整理成条目（机械迁移第一版）。
-  const openEntryLib = async (lib?: EntryLib) => {
+  // all = 全局回顾：合并所有项目库加全局库加技能库，只读（三库编号独立会撞号，不提供编辑）。
+  const openEntryLib = async (lib?: EntryLib | { kind: "all" }) => {
     if (!workspace) return;
+    if (lib?.kind === "all") {
+      const merged: MemoryEntry[] = [];
+      let bad = 0;
+      for (const p of projects) {
+        const r = await readEntriesLib(workspace, { kind: "project", slug: p.slug });
+        merged.push(...r.entries);
+        bad += r.badLines.length;
+      }
+      for (const k of ["global", "skill"] as const) {
+        const r = await readEntriesLib(workspace, { kind: k });
+        merged.push(...r.entries);
+        bad += r.badLines.length;
+      }
+      setEntryLib({ lib: { kind: "all" }, entries: merged, badLineCount: bad });
+      return;
+    }
     const target: EntryLib | null =
       lib ?? (project ? { kind: "project", slug: project.slug } : null);
     if (!target) return;
@@ -493,7 +514,7 @@ export default function App() {
   // 导出 md：复制到剪贴板，记录导出时间供导回时识别两边都改过的冲突。
   const [entriesExportedAt, setEntriesExportedAt] = useState<string | null>(null);
   const onExportEntriesMd = async () => {
-    if (!entryLib) return;
+    if (!entryLib || entryLib.lib.kind === "all") return;
     const title =
       entryLib.lib.kind === "project"
         ? `记忆库 · ${project?.name ?? entryLib.lib.slug}`
@@ -513,7 +534,7 @@ export default function App() {
   };
   // 导回 md：按编号对账。删除和两边都改过的都先问，取消则保留。
   const onImportEntriesMd = async (md: string) => {
-    if (!workspace || !entryLib) return;
+    if (!workspace || !entryLib || entryLib.lib.kind === "all") return;
     const plan = reconcileImport(entryLib.entries, parseMarkdown(md), {
       exportedAt: entriesExportedAt ?? undefined,
     });
@@ -568,7 +589,7 @@ export default function App() {
 
   // 单条更新（调档、钉住等）：改一条写回当前库，同一编号处处生效。
   const onUpdateEntry = async (id: string, patch: Partial<MemoryEntry>) => {
-    if (!workspace || !entryLib) return;
+    if (!workspace || !entryLib || entryLib.lib.kind === "all") return;
     const today = new Date().toISOString();
     const next = entryLib.entries.map((e) =>
       e.id === id ? { ...e, ...patch, updatedAt: today } : e
@@ -579,7 +600,7 @@ export default function App() {
 
   // 跨库移动：换归属。目标库重发编号避免撞号，写两个库，源库移除目标库追加。
   const onMoveEntry = async (id: string, target: "project" | "global" | "skill") => {
-    if (!workspace || !entryLib) return;
+    if (!workspace || !entryLib || entryLib.lib.kind === "all") return;
     const entry = entryLib.entries.find((e) => e.id === id);
     if (!entry) return;
     const targetLib: EntryLib =
@@ -843,7 +864,7 @@ export default function App() {
           badLineCount={entryLib.badLineCount}
           libKind={entryLib.lib.kind}
           onSwitchLib={(k) =>
-            openEntryLib(k === "project" ? { kind: "project", slug: project.slug } : { kind: k })
+            openEntryLib(k === "project" ? { kind: "project", slug: project.slug } : { kind: k as "global" | "skill" | "all" })
           }
           onBack={() => setEntryLib(null)}
           canMigrate={entryLib.lib.kind === "project" && !!project.cardsMarkdown.trim()}

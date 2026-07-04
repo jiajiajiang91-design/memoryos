@@ -310,6 +310,8 @@ const DICT: Record<string, Entry> = {
   "entryLib.filterTier": { zh: "权重", en: "Weight" },
   "entryLib.searchNoHit": { zh: "没有匹配的记忆", en: "No matching entries" },
   "entryLib.relations": { zh: "关联 {n}", en: "{n} linked" },
+  "entryLib.libAll": { zh: "全部", en: "All" },
+  "entryLib.allReadOnly": { zh: "全局回顾：一处搜遍三个库，只看不改。要改就切到对应的库", en: "Global review: search all libraries in one place, read-only. Switch to a library to edit" },
   "entryLib.libProject": { zh: "项目库", en: "Project" },
   "entryLib.libGlobal": { zh: "全局库", en: "Global" },
   "entryLib.libSkill": { zh: "技能库", en: "Skills" },
