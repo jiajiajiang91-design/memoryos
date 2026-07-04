@@ -4,7 +4,7 @@
 // 切换真实注入链路等六卡迁移完成后再做（设计稿第 9 节 S5 之后）。
 
 import { useMemo, useState } from "react";
-import { ArrowLeft, Bot, User, Sparkles, LayoutGrid, Upload, Download, Search, Link2, Pin, Archive, Undo2, Pencil } from "lucide-react";
+import { ArrowLeft, Bot, User, Sparkles, LayoutGrid, Upload, Download, Search, Link2, Pin, Archive, Undo2, Pencil, Share2 } from "lucide-react";
 import { toTier, scoreEntry, THRESHOLDS, type Tier } from "../lib/weight";
 import {
   ALL_KINDS,
@@ -80,7 +80,7 @@ const KIND_TINT: Record<EntryKind, string> = {
 
 export default function EntryLibraryPage(props: Props) {
   const t = useT();
-  const [view, setView] = useState<"user" | "ai">("user");
+  const [view, setView] = useState<"user" | "ai" | "graph">("user");
   const [importOpen, setImportOpen] = useState(false);
   const [importText, setImportText] = useState("");
   const [importBusy, setImportBusy] = useState(false);
@@ -168,6 +168,14 @@ export default function EntryLibraryPage(props: Props) {
             }`}
           >
             <Bot size={14} strokeWidth={1.5} /> {t("entryLib.aiView")}
+          </button>
+          <button
+            onClick={() => setView("graph")}
+            className={`h-9 px-4 inline-flex items-center gap-1.5 transition-colors ${
+              view === "graph" ? "bg-slate text-white" : "text-ink-soft hover:text-ink"
+            }`}
+          >
+            <Share2 size={14} strokeWidth={1.5} /> {t("entryLib.graphView")}
           </button>
         </div>
         )}
@@ -533,6 +541,75 @@ export default function EntryLibraryPage(props: Props) {
               </section>
             )}
           </div>
+        ) : effectiveView === "graph" ? (
+          (() => {
+            // 星图第一版：只画有关联的记忆，圆环布局，蓝线是边
+            const involved = new Set<string>();
+            for (const e of active) {
+              for (const r of e.relations) {
+                if (active.some((x) => x.id === r.to)) {
+                  involved.add(e.id);
+                  involved.add(r.to);
+                }
+              }
+            }
+            const nodes = active.filter((e) => involved.has(e.id));
+            if (nodes.length === 0) {
+              return <p className="text-[14px] text-ink-faint text-center py-16">{t("entryLib.graphEmpty")}</p>;
+            }
+            const W = 760, H = 520, cx = W / 2, cy = H / 2;
+            const R = Math.min(W, H) / 2 - 70;
+            const pos = new Map<string, { x: number; y: number }>();
+            nodes.forEach((e, i) => {
+              const a = (2 * Math.PI * i) / nodes.length - Math.PI / 2;
+              pos.set(e.id, { x: cx + R * Math.cos(a), y: cy + R * Math.sin(a) });
+            });
+            return (
+              <div className="max-w-[808px]">
+                <p className="text-[13px] text-ink-faint mb-3">{t("entryLib.graphHint")}</p>
+                <svg viewBox={`0 0 ${W} ${H}`} className="w-full rounded-xl border border-hairline bg-surface-soft">
+                  {nodes.flatMap((e) =>
+                    e.relations
+                      .filter((r) => pos.has(r.to))
+                      .map((r) => {
+                        const a = pos.get(e.id)!;
+                        const b = pos.get(r.to)!;
+                        return (
+                          <line
+                            key={`${e.id}->${r.to}`}
+                            x1={a.x} y1={a.y} x2={b.x} y2={b.y}
+                            stroke="#002FA7" strokeOpacity=".35" strokeWidth="1.5"
+                          />
+                        );
+                      })
+                  )}
+                  {nodes.map((e) => {
+                    const p = pos.get(e.id)!;
+                    const tier = tierOf(e);
+                    const fill = tier === "high" ? "#002FA7" : tier === "mid" ? "#8A93A8" : "#C6CBD6";
+                    return (
+                      <g key={`n-${e.scopes[0] ?? ""}-${e.id}`}>
+                        <title>{e.text}</title>
+                        <circle cx={p.x} cy={p.y} r={e.pinned ? 8 : 6} fill={fill} />
+                        <text
+                          x={p.x} y={p.y - 12} textAnchor="middle"
+                          className="fill-current text-ink-soft" fontSize="10"
+                        >
+                          {e.id}
+                        </text>
+                        <text
+                          x={p.x} y={p.y + 22} textAnchor="middle"
+                          className="fill-current text-ink-faint" fontSize="9"
+                        >
+                          {e.text.length > 12 ? e.text.slice(0, 12) + "…" : e.text}
+                        </text>
+                      </g>
+                    );
+                  })}
+                </svg>
+              </div>
+            );
+          })()
         ) : (
           <div className="max-w-[808px]">
             <div className="mb-3 flex items-center gap-3 text-[13px] text-ink-soft">
