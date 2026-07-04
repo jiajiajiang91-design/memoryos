@@ -10,6 +10,7 @@ import {
   compareSessionsDesc,
   extractLatestCompactContext,
 } from "../../src/lib/sessionParse";
+import { fromJsonl, buildInjectionFromEntries } from "../../src/lib/entry";
 import type { Session } from "../../src/types";
 
 export type ProjectListEntry = {
@@ -122,7 +123,26 @@ export async function getProjectMemory(
   const aboutMe = await readTextSafe(path.join(workspace, "about_me.md"));
   const context = await readTextSafe(path.join(dir, "00_context.md"));
   const decisions = await readTextSafe(path.join(dir, "decisions.md"));
-  const cards = await readTextSafe(path.join(dir, "cards.md"));
+  let cards = await readTextSafe(path.join(dir, "cards.md"));
+
+  // 条目库注入开关（07-04 确认，与 app 复制开场提示词同一逻辑）：
+  // project.json 的 entryInjection 开且条目库有现行条目 → cards 换成按权重拼的条目文本；
+  // 条目库为空或读不到 → 自动回落记忆卡片，MCP 客户端与复制粘贴两条路保持一致。
+  try {
+    const meta = JSON.parse(
+      await readTextSafe(path.join(dir, "project.json")) || "{}"
+    );
+    if (meta.entryInjection) {
+      const lib = fromJsonl(await readTextSafe(path.join(dir, "entries.jsonl")));
+      const active = lib.entries.filter((e) => !e.archived);
+      if (active.length) {
+        const inj = buildInjectionFromEntries(active);
+        cards = `# 记忆条目 · ${match.name}\n\n${inj.text}`;
+      }
+    }
+  } catch {
+    // 开关读取失败不影响主流程，保持 cards.md 原文
+  }
 
   const sessions: Session[] = [];
   const sessionsDir = path.join(dir, "sessions");
