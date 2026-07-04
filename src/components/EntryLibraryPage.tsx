@@ -274,10 +274,16 @@ export default function EntryLibraryPage(props: Props) {
                             {SOURCE_LABELS[e.source]}
                           </span>
                           {e.relations.length > 0 && (
-                            <span className="px-2 py-0.5 rounded-full text-[11px] bg-[#E8EDFF] text-[#002FA7] inline-flex items-center gap-1">
+                            <button
+                              onClick={() => setEditingId(editingId === e.id ? null : e.id)}
+                              title={e.relations
+                                .map((r) => props.entries.find((x) => x.id === r.to)?.text ?? r.to)
+                                .join(" · ")}
+                              className="px-2 py-0.5 rounded-full text-[11px] bg-[#E8EDFF] text-[#002FA7] inline-flex items-center gap-1 hover:opacity-75 transition-opacity"
+                            >
                               <Link2 size={10} strokeWidth={1.5} />
                               {t("entryLib.relations", { n: e.relations.length })}
-                            </span>
+                            </button>
                           )}
                           {e.source === "third_party" && (
                             <button
