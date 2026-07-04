@@ -134,11 +134,12 @@ export function groupByKind<T extends { kinds: EntryKind[] }>(
 
 // ── 导出 md（每条只出现一次，按主类型分区块，行尾带全部类型和来源标签）──
 
-/** 一条记忆导出成一行：`- [id] 正文 #决策 #状态 @用户`。 */
+/** 一条记忆导出成一行：`- [id] 正文 #决策 #状态 @用户 ->m-0002`。箭头是关联目标。 */
 function entryToLine(e: MemoryEntry): string {
   const kindTags = kindsOf(e).map((k) => "#" + KIND_LABELS[k]).join(" ");
   const srcTag = "@" + SOURCE_LABELS[e.source];
-  return `- [${e.id}] ${e.text} ${kindTags} ${srcTag}`.replace(/\s+$/, "");
+  const relTags = e.relations.map((r) => "->" + r.to).join(" ");
+  return `- [${e.id}] ${e.text} ${kindTags} ${srcTag}${relTags ? " " + relTags : ""}`.replace(/\s+$/, "");
 }
 
 /**
@@ -168,6 +169,8 @@ export type ParsedLine = {
   text: string;
   kinds: EntryKind[];
   source: SourceKind | null;
+  /** 行内 ->编号 解析出的关联目标。 */
+  relTargets: string[];
 };
 
 const LINE_RE = /^\s*-\s+(?:\[(m-\d+)\]\s*)?(.*)$/;
@@ -187,16 +190,26 @@ export function parseMarkdown(md: string): ParsedLine[] {
     }
     const srcM = rest.match(/@(\S+)/);
     const source = srcM ? LABEL_TO_SOURCE[srcM[1]] ?? null : null;
-    const text = rest.replace(/[#@]\S+/g, "").trim();
+    const relTargets: string[] = [];
+    for (const rm of rest.matchAll(/->(m-\d+)/g)) {
+      if (!relTargets.includes(rm[1])) relTargets.push(rm[1]);
+    }
+    const text = rest.replace(/->m-\d+/g, "").replace(/[#@]\S+/g, "").trim();
     if (!text) continue; // 纯标签无正文的行不算
-    out.push({ id, text, kinds, source });
+    out.push({ id, text, kinds, source, relTargets });
   }
   return out;
 }
 
 export type ImportPlan = {
-  updates: { current: MemoryEntry; text: string; kinds: EntryKind[]; conflict: boolean }[];
-  adds: { text: string; kinds: EntryKind[]; source: SourceKind }[];
+  updates: {
+    current: MemoryEntry;
+    text: string;
+    kinds: EntryKind[];
+    relations: EntryRelation[];
+    conflict: boolean;
+  }[];
+  adds: { text: string; kinds: EntryKind[]; source: SourceKind; relTargets: string[] }[];
   deletes: MemoryEntry[]; // 待用户确认，不自动删
 };
 
@@ -221,13 +234,28 @@ export function reconcileImport(
       seen.add(p.id);
       const cur = byId.get(p.id)!;
       const kinds = p.kinds.length ? p.kinds : cur.kinds;
-      const changed = cur.text !== p.text || !sameKinds(cur.kinds, kinds);
+      // 关联对账：目标集合没变不算变；变了保留原关系类型，新目标记 related
+      const curTargets = cur.relations.map((r) => r.to);
+      const relChanged =
+        curTargets.length !== p.relTargets.length ||
+        !p.relTargets.every((to) => curTargets.includes(to));
+      const relations = relChanged
+        ? p.relTargets.map(
+            (to) => cur.relations.find((r) => r.to === to) ?? { to, rel: "related" as const }
+          )
+        : cur.relations;
+      const changed = cur.text !== p.text || !sameKinds(cur.kinds, kinds) || relChanged;
       if (changed) {
         const conflict = !!opts.exportedAt && cur.updatedAt > opts.exportedAt;
-        updates.push({ current: cur, text: p.text, kinds, conflict });
+        updates.push({ current: cur, text: p.text, kinds, relations, conflict });
       }
     } else {
-      adds.push({ text: p.text, kinds: p.kinds.length ? p.kinds : ["misc"], source: p.source ?? "user" });
+      adds.push({
+        text: p.text,
+        kinds: p.kinds.length ? p.kinds : ["misc"],
+        source: p.source ?? "user",
+        relTargets: p.relTargets,
+      });
     }
   }
 
@@ -306,6 +334,23 @@ export function buildInjectionFromEntries(
   }
   const text = lines.join("\n");
   return { text, charCount: entryCharCount(text), includedIds, droppedIds };
+}
+
+// ── AI 整理提示词：把导出 md 交给外部 AI 调标签、提关联，改完导回 ────
+
+export function buildRefinePrompt(exportedMd: string): string {
+  return `请帮我整理下面的记忆条目清单。每行一条记忆，格式固定：
+
+- [编号] 正文 #类型 @来源 ->关联编号
+
+你要做的：
+1. 检查每条的 #类型 标签是否贴切，不贴切就改。八类可选：#决策 #约束 #状态 #交接 #事实 #偏好 #技能 #零散。一条可以有多个类型标签。
+2. 找出内容上相关的条目，在行尾加 ->编号 指向对方，一行可以有多个箭头。已有的箭头如果不合理可以删。
+3. 只动 #标签 和 ->箭头。不许改正文、不许改 [编号]、不许改 @来源、不许增删行。
+
+输出完整清单，格式和输入完全一样，不要解释。
+
+${exportedMd}`;
 }
 
 // ── 写入闭环：卡片入库后同步条目库（机械第一版）───────────────────

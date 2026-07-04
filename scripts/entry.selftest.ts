@@ -229,5 +229,29 @@ const lone = syncOne.entries.filter((e) => e.createdAt === "2026-07-05");
 eq(lone.length, 1, "只新增一条");
 eq(lone[0].relations.length, 0, "单条新增不建边");
 
+console.log("\n[M] 关联走 md 通道");
+const rA = mk({ id: "m-0501", text: "决策甲", kinds: ["decision"], relations: [{ to: "m-0502", rel: "from_same_session" }] });
+const rB = mk({ id: "m-0502", text: "状态乙", kinds: ["state"] });
+const mdR = exportToMarkdown([rA, rB]);
+ok(mdR.includes("->m-0502"), "导出带关联箭头");
+// 原样导回：关联目标集合没变，不算更新，关系类型保留
+const planR0 = reconcileImport([rA, rB], parseMarkdown(mdR));
+eq(planR0.updates.length, 0, "关联原样导回不算变");
+// AI 加了一条关联箭头
+const mdR2 = mdR.replace("状态乙 #状态 @用户", "状态乙 #状态 @用户 ->m-0501");
+const planR2 = reconcileImport([rA, rB], parseMarkdown(mdR2));
+eq(planR2.updates.length, 1, "加箭头算一条更新");
+eq(planR2.updates[0].relations, [{ to: "m-0501", rel: "related" }], "新箭头记 related");
+// AI 删掉原有箭头
+const mdR3 = mdR.replace(" ->m-0502", "");
+const planR3 = reconcileImport([rA, rB], parseMarkdown(mdR3));
+eq(planR3.updates[0]?.relations, [], "删箭头清关联");
+// 目标集合不变时保留原关系类型
+const planR4 = reconcileImport([rA, rB], parseMarkdown(mdR.replace("决策甲", "决策甲改了")));
+eq(planR4.updates[0].relations[0].rel, "from_same_session", "只改正文时原关系类型保留");
+// 新行带箭头
+const planR5 = reconcileImport([rA], parseMarkdown("- 新条带关联 #事实 @用户 ->m-0501"));
+eq(planR5.adds[0].relTargets, ["m-0501"], "新行解析出关联目标");
+
 console.log(`\n结果：${pass} passed, ${fail} failed\n`);
 if (fail > 0) process.exit(1);

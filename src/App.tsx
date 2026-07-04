@@ -44,6 +44,7 @@ import {
   reconcileImport,
   nextEntryId,
   buildInjectionFromEntries,
+  buildRefinePrompt,
   type MemoryEntry,
 } from "./lib/entry";
 import EntryLibraryPage from "./components/EntryLibraryPage";
@@ -503,6 +504,13 @@ export default function App() {
     setEntriesExportedAt(new Date().toISOString());
     showToast(t("entryLib.exported"));
   };
+  // 复制 AI 整理提示词：导出 md 包上调标签提关联的指令，改完从导回 md 贴回。
+  const onCopyRefinePrompt = async () => {
+    if (!entryLib) return;
+    await copyToClipboard(buildRefinePrompt(exportToMarkdown(entryLib.entries)));
+    setEntriesExportedAt(new Date().toISOString());
+    showToast(t("entryLib.refineCopied"));
+  };
   // 导回 md：按编号对账。删除和两边都改过的都先问，取消则保留。
   const onImportEntriesMd = async (md: string) => {
     if (!workspace || !entryLib) return;
@@ -536,7 +544,7 @@ export default function App() {
       .filter((e) => !deleteIds.has(e.id))
       .map((e) => {
         const u = updateById.get(e.id);
-        return u ? { ...e, text: u.text, kinds: u.kinds, updatedAt: today } : e;
+        return u ? { ...e, text: u.text, kinds: u.kinds, relations: u.relations, updatedAt: today } : e;
       });
     const addScope =
       entryLib.lib.kind === "project" ? entryLib.lib.slug : entryLib.lib.kind;
@@ -546,7 +554,9 @@ export default function App() {
       counter.push({ id });
       next.push({
         id, text: a.text, kinds: a.kinds, scopes: [addScope], source: a.source,
-        modality: "text", relations: [], createdAt: today, updatedAt: today,
+        modality: "text",
+        relations: a.relTargets.map((to) => ({ to, rel: "related" as const })),
+        createdAt: today, updatedAt: today,
       });
     }
     await writeEntriesLib(workspace, entryLib.lib, next);
@@ -840,6 +850,7 @@ export default function App() {
           onMigrate={onMigrateEntries}
           onExportMd={onExportEntriesMd}
           onImportMd={onImportEntriesMd}
+          onCopyRefinePrompt={onCopyRefinePrompt}
           onUpdateEntry={onUpdateEntry}
           onMoveEntry={onMoveEntry}
           entryInjectionOn={project.entryInjection ?? false}

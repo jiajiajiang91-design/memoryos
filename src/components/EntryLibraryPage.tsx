@@ -30,6 +30,8 @@ type Props = {
   onExportMd: () => void;
   /** 把改完的 md 按编号对回。 */
   onImportMd: (md: string) => Promise<void>;
+  /** 复制 AI 整理提示词：导出 md 包上调标签提关联的指令。 */
+  onCopyRefinePrompt: () => void;
   /** 当前库：项目、全局、技能，三库平级。 */
   libKind: "project" | "global" | "skill";
   onSwitchLib: (k: "project" | "global" | "skill") => void;
@@ -177,6 +179,12 @@ export default function EntryLibraryPage(props: Props) {
                 className="h-9 px-3.5 rounded-lg border border-hairline text-[13px] text-ink-soft inline-flex items-center gap-1.5 hover:text-ink hover:border-slate/40 transition-colors"
               >
                 <Upload size={14} strokeWidth={1.5} /> {t("entryLib.importMd")}
+              </button>
+              <button
+                onClick={props.onCopyRefinePrompt}
+                className="h-9 px-3.5 rounded-lg border border-hairline text-[13px] text-ink-soft inline-flex items-center gap-1.5 hover:text-ink hover:border-slate/40 transition-colors"
+              >
+                <Sparkles size={14} strokeWidth={1.5} /> {t("entryLib.refinePrompt")}
               </button>
             </div>
             {importOpen && (

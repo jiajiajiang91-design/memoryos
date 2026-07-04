@@ -310,6 +310,8 @@ const DICT: Record<string, Entry> = {
   "entryLib.truthVerified": { zh: "已校验", en: "Verified" },
   "entryLib.truthUnverified": { zh: "未校验", en: "Unverified" },
   "entryLib.exportMd": { zh: "导出 md", en: "Export md" },
+  "entryLib.refinePrompt": { zh: "复制给 AI 整理", en: "Copy for AI tidy-up" },
+  "entryLib.refineCopied": { zh: "已复制整理提示词。粘给任意 AI，改完的清单用导回 md 贴回来", en: "Tidy-up prompt copied. Paste to any AI, then bring the result back via Import md" },
   "entryLib.exported": { zh: "已复制到剪贴板，可以携带给别的 AI 或粘到文件里手改", en: "Copied — carry it to another AI or edit it by hand" },
   "entryLib.importMd": { zh: "导回 md", en: "Import md" },
   "entryLib.importPlaceholder": { zh: "把改好的 md 全文粘贴到这里，按编号对回", en: "Paste the edited md here; entries match by id" },
