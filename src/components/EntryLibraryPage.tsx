@@ -84,13 +84,27 @@ export default function EntryLibraryPage(props: Props) {
   // 关键词检索：搜正文和编号，直面混乱性痛点的第一版
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
-    return props.entries.filter((e) => {
+    const pass = (e: MemoryEntry) => {
       if (q && !e.text.toLowerCase().includes(q) && !e.id.toLowerCase().includes(q)) return false;
       if (fKind && !e.kinds.includes(fKind)) return false;
       if (fSource && e.source !== fSource) return false;
       if (fTier && tierOf(e) !== fTier) return false;
       return true;
-    });
+    };
+    const hits = props.entries.filter(pass);
+    // 关联跳转（找出关系并输出落在检索侧）：关键词命中的条目，其关联的条目
+    // 双向一起带出，即使不含关键词。只在有关键词时生效，筛选器照常约束。
+    if (!q) return hits;
+    const hitIds = new Set(hits.map((e) => e.id));
+    const pulled = new Set(hitIds);
+    for (const e of props.entries) {
+      if (hitIds.has(e.id)) {
+        for (const r of e.relations) pulled.add(r.to); // 命中者指向的
+      } else if (e.relations.some((r) => hitIds.has(r.to))) {
+        pulled.add(e.id); // 指向命中者的
+      }
+    }
+    return props.entries.filter((e) => pulled.has(e.id));
   }, [props.entries, query, fKind, fSource, fTier]);
   // 现行层进八类分组；已归档单独一区，捞回即回现行层
   const active = useMemo(() => filtered.filter((e) => !e.archived), [filtered]);
