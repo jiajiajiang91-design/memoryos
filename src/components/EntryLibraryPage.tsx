@@ -5,7 +5,7 @@
 
 import { useMemo, useState } from "react";
 import { ArrowLeft, Bot, User, Sparkles, LayoutGrid, Upload, Download, Search, Link2, Pin, Archive, Undo2, Pencil } from "lucide-react";
-import { toTier, scoreEntry, type Tier } from "../lib/weight";
+import { toTier, scoreEntry, THRESHOLDS, type Tier } from "../lib/weight";
 import {
   ALL_KINDS,
   KIND_LABELS,
@@ -51,10 +51,20 @@ const TIER_CYCLE: Record<Tier, { next: number; label: "entryLib.tierHigh" | "ent
   low: { next: 80, label: "entryLib.tierLow", cls: "bg-[#FDF0F5] text-[#A83A66]" },
 };
 
+function daysIdle(e: MemoryEntry): number {
+  return Math.max(0, Math.floor((Date.now() - new Date(e.updatedAt || e.createdAt).getTime()) / 86400000));
+}
+
 /** 条目当前档位：手动分优先，否则按真实标签和新旧算。 */
 function tierOf(e: MemoryEntry): Tier {
-  const daysOld = Math.max(0, Math.floor((Date.now() - new Date(e.updatedAt || e.createdAt).getTime()) / 86400000));
-  return toTier(scoreEntry(e, daysOld));
+  return toTier(scoreEntry(e, daysIdle(e)));
+}
+
+/** 归档候选（机械规则只提示不自动动）：分低于归档阈值且 30 天没动，钉住豁免。 */
+function isArchiveCandidate(e: MemoryEntry): boolean {
+  if (e.pinned || e.archived) return false;
+  const idle = daysIdle(e);
+  return idle >= 30 && scoreEntry(e, idle) < THRESHOLDS.archive;
 }
 
 const KIND_TINT: Record<EntryKind, string> = {
@@ -281,6 +291,19 @@ export default function EntryLibraryPage(props: Props) {
                         <span className="text-[11px] text-ink-faint font-display mt-0.5 shrink-0">{e.id}</span>
                         <p className="text-[14px] text-ink leading-relaxed flex-1 min-w-0">{e.text}</p>
                         <span className="flex gap-1.5 shrink-0 items-center">
+                          {isArchiveCandidate(e) && (
+                            <button
+                              onClick={() =>
+                                props.onUpdateEntry(e.id, {
+                                  archived: { reason: "lowWeight", at: new Date().toISOString().slice(0, 10) },
+                                })
+                              }
+                              title={t("entryLib.suggestArchiveHint")}
+                              className="px-2 py-0.5 rounded-full text-[11px] bg-[#FFF5E1] text-[#A37A1C] hover:bg-[#FFEFD0] transition-colors"
+                            >
+                              {t("entryLib.suggestArchive")}
+                            </button>
+                          )}
                           {(() => {
                             const tier = tierOf(e);
                             const c = TIER_CYCLE[tier];

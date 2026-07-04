@@ -289,6 +289,8 @@ const DICT: Record<string, Entry> = {
   "entryLib.moveToGlobal": { zh: "移到全局库", en: "Move to global" },
   "entryLib.moveToSkill": { zh: "移到技能库", en: "Move to skills" },
   "entryLib.moved": { zh: "已移动，编号换新", en: "Moved with a new id" },
+  "entryLib.suggestArchive": { zh: "建议归档", en: "Suggest archive" },
+  "entryLib.suggestArchiveHint": { zh: "权重低且 30 天没动过。点击收进档案，随时可捞回；钉住可豁免", en: "Low weight and idle for 30 days. Click to archive — reclaim anytime; pin to exempt" },
   "entryLib.archive": { zh: "归档", en: "Archive" },
   "entryLib.archiveHint": { zh: "收进档案，不删除，随时可捞回", en: "Move to archive — not deleted, reclaim anytime" },
   "entryLib.archivedSection": { zh: "已归档", en: "Archived" },
