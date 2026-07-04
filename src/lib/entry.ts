@@ -326,14 +326,28 @@ export function syncEntriesWithCards(
   const have = new Set(existing.filter((e) => !e.archived).map((e) => normText(e.text)));
   const counter: { id: string }[] = [...existing];
   const out: MemoryEntry[] = [...existing];
+  const newIds: string[] = [];
   let added = 0;
   for (const cand of migrateCardsToEntries(cardsMd, scope, now)) {
     if (have.has(normText(cand.text))) continue;
     const id = nextEntryId(counter);
     counter.push({ id });
     out.push({ ...cand, id });
+    newIds.push(id);
     have.add(normText(cand.text));
     added++;
+  }
+  // 隐式边（知识图谱最便宜的关系）：同一次对话总结产生的新条目互相关联。
+  // 存成链式，每条指向前一条，避免两两全连边数爆炸。
+  if (newIds.length > 1) {
+    const idSet = new Set(newIds);
+    for (const e of out) {
+      if (!idSet.has(e.id)) continue;
+      const idx = newIds.indexOf(e.id);
+      if (idx > 0) {
+        e.relations = [...e.relations, { to: newIds[idx - 1], rel: "from_same_session" }];
+      }
+    }
   }
   let archivedCount = 0;
   const final = out.map((e) => {

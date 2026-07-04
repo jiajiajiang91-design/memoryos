@@ -216,6 +216,18 @@ eq(sync.archivedCount, 1, "归档计数只算真归档的");
 // 幂等：同一份卡片再同步一次不再新增
 const sync2 = syncEntriesWithCards(sync.entries, newCards, "proj", "2026-07-04");
 eq(sync2.added, 0, "重复同步不再新增");
+// 隐式边：同一次同步的新条目链式互联
+const newOnes = sync.entries.filter((e) => e.createdAt === "2026-07-04");
+eq(newOnes.length, 2, "本次同步两条新条目");
+const second = newOnes[1];
+eq(second.relations[0]?.rel, "from_same_session", "第二条链到第一条，同会话隐式边");
+eq(second.relations[0]?.to, newOnes[0].id, "边指向同批前一条");
+eq(newOnes[0].relations.length, 0, "第一条不自指");
+// 单条新增不建边
+const syncOne = syncEntriesWithCards(sync.entries, newCards + "- 又一条新的\n", "proj", "2026-07-05");
+const lone = syncOne.entries.filter((e) => e.createdAt === "2026-07-05");
+eq(lone.length, 1, "只新增一条");
+eq(lone[0].relations.length, 0, "单条新增不建边");
 
 console.log(`\n结果：${pass} passed, ${fail} failed\n`);
 if (fail > 0) process.exit(1);
