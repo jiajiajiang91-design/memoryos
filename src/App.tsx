@@ -45,6 +45,8 @@ import {
   nextEntryId,
   buildInjectionFromEntries,
   buildRefinePrompt,
+  migrateAboutMeToEntries,
+  suggestRelationsByOverlap,
   type MemoryEntry,
 } from "./lib/entry";
 import EntryLibraryPage from "./components/EntryLibraryPage";
@@ -503,12 +505,35 @@ export default function App() {
     setEntryLib({ lib: target, entries: r.entries, badLineCount: r.badLines.length });
   };
   const onMigrateEntries = async () => {
-    if (!workspace || !project) return;
+    if (!workspace || !entryLib) return;
     const today = new Date().toISOString().slice(0, 10);
+    if (entryLib.lib.kind === "global") {
+      // 全局库：把关于我逐条整理成偏好条目
+      const aboutMe = await readAboutMe(workspace);
+      const migrated = migrateAboutMeToEntries(aboutMe, today);
+      await writeEntriesLib(workspace, { kind: "global" }, migrated);
+      setEntryLib({ lib: { kind: "global" }, entries: migrated, badLineCount: 0 });
+      showToast(t("entryLib.migrateDone", { n: migrated.length }));
+      return;
+    }
+    if (!project) return;
     const migrated = migrateCardsToEntries(project.cardsMarkdown, project.slug, today);
     await writeEntriesLib(workspace, { kind: "project", slug: project.slug }, migrated);
     setEntryLib({ lib: { kind: "project", slug: project.slug }, entries: migrated, badLineCount: 0 });
     showToast(t("entryLib.migrateDone", { n: migrated.length }));
+  };
+
+  // 一键找关联：内容相近的条目自动建边（机械初版，AI 通道做精修）。
+  const onAutoRelate = async () => {
+    if (!workspace || !entryLib || entryLib.lib.kind === "all") return;
+    const res = suggestRelationsByOverlap(entryLib.entries);
+    if (res.added === 0) {
+      showToast(t("entryLib.autoRelateNone"));
+      return;
+    }
+    await writeEntriesLib(workspace, entryLib.lib, res.entries);
+    setEntryLib({ ...entryLib, entries: res.entries });
+    showToast(t("entryLib.autoRelateDone", { n: res.added }));
   };
 
   // 导出 md：复制到剪贴板，记录导出时间供导回时识别两边都改过的冲突。
@@ -876,8 +901,12 @@ export default function App() {
             openEntryLib(k === "project" ? { kind: "project", slug: project.slug } : { kind: k as "global" | "skill" | "all" })
           }
           onBack={() => setEntryLib(null)}
-          canMigrate={entryLib.lib.kind === "project" && !!project.cardsMarkdown.trim()}
+          canMigrate={
+            entryLib.lib.kind === "global" ||
+            (entryLib.lib.kind === "project" && !!project.cardsMarkdown.trim())
+          }
           onMigrate={onMigrateEntries}
+          onAutoRelate={onAutoRelate}
           onExportMd={onExportEntriesMd}
           onImportMd={onImportEntriesMd}
           onCopyRefinePrompt={onCopyRefinePrompt}

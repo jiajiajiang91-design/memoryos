@@ -23,9 +23,11 @@ type Props = {
   /** 读库时跳过的坏行数，大于 0 时提示但不阻塞。 */
   badLineCount: number;
   onBack: () => void;
-  /** 库为空且项目有记忆卡片时显示整理入口。 */
+  /** 库为空时显示整理入口：项目库整理六卡，全局库整理关于我。 */
   canMigrate: boolean;
   onMigrate: () => void;
+  /** 一键找关联：内容相近自动建边（机械初版）。 */
+  onAutoRelate: () => void;
   /** 导出 md 到剪贴板，携带或手改用。 */
   onExportMd: () => void;
   /** 把改完的 md 按编号对回。 */
@@ -190,13 +192,16 @@ export default function EntryLibraryPage(props: Props) {
 
         {props.entries.length === 0 ? (
           <div className="max-w-[560px] mx-auto mt-16 text-center">
-            <p className="text-[15px] text-ink-faint mb-6">{t("entryLib.empty")}</p>
-            {props.canMigrate && (
+            <p className="text-[15px] text-ink-faint mb-6">
+              {props.libKind === "skill" ? t("entryLib.skillEmptyHint") : t("entryLib.empty")}
+            </p>
+            {props.canMigrate && props.libKind !== "skill" && (
               <button
                 onClick={props.onMigrate}
                 className="h-10 px-5 rounded-lg bg-slate text-white font-medium text-sm inline-flex items-center gap-2 shadow-btn hover:-translate-y-px hover:shadow-btn-hover transition-all"
               >
-                <Sparkles size={15} strokeWidth={1.5} /> {t("entryLib.migrateCta")}
+                <Sparkles size={15} strokeWidth={1.5} />
+                {props.libKind === "global" ? t("entryLib.migrateGlobalCta") : t("entryLib.migrateCta")}
               </button>
             )}
           </div>
@@ -555,7 +560,20 @@ export default function EntryLibraryPage(props: Props) {
             }
             const nodes = active.filter((e) => involved.has(e.id));
             if (nodes.length === 0) {
-              return <p className="text-[14px] text-ink-faint text-center py-16">{t("entryLib.graphEmpty")}</p>;
+              return (
+                <div className="max-w-[560px] mx-auto mt-16 text-center">
+                  <p className="text-[14px] text-ink-faint mb-6">{t("entryLib.graphEmpty")}</p>
+                  {!readOnly && (
+                    <button
+                      onClick={props.onAutoRelate}
+                      title={t("entryLib.autoRelateHint")}
+                      className="h-10 px-5 rounded-lg bg-slate text-white font-medium text-sm inline-flex items-center gap-2 shadow-btn hover:-translate-y-px hover:shadow-btn-hover transition-all"
+                    >
+                      <Link2 size={15} strokeWidth={1.5} /> {t("entryLib.autoRelate")}
+                    </button>
+                  )}
+                </div>
+              );
             }
             const W = 760, H = 520, cx = W / 2, cy = H / 2;
             const R = Math.min(W, H) / 2 - 70;
@@ -566,7 +584,18 @@ export default function EntryLibraryPage(props: Props) {
             });
             return (
               <div className="max-w-[808px]">
-                <p className="text-[13px] text-ink-faint mb-3">{t("entryLib.graphHint")}</p>
+                <div className="flex items-center gap-3 mb-3">
+                  <p className="text-[13px] text-ink-faint flex-1">{t("entryLib.graphHint")}</p>
+                  {!readOnly && (
+                    <button
+                      onClick={props.onAutoRelate}
+                      title={t("entryLib.autoRelateHint")}
+                      className="h-8 px-3 rounded-lg border border-hairline text-[12px] text-ink-soft inline-flex items-center gap-1.5 hover:text-ink hover:border-slate/40 transition-colors"
+                    >
+                      <Link2 size={12} strokeWidth={1.5} /> {t("entryLib.autoRelate")}
+                    </button>
+                  )}
+                </div>
                 <svg viewBox={`0 0 ${W} ${H}`} className="w-full rounded-xl border border-hairline bg-surface-soft">
                   {nodes.flatMap((e) =>
                     e.relations

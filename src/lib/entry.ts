@@ -336,6 +336,97 @@ export function buildInjectionFromEntries(
   return { text, charCount: entryCharCount(text), includedIds, droppedIds };
 }
 
+// ── 关于我迁移：about_me.md 机械解析进全局库，每条列表行一条偏好条目 ────
+
+export function migrateAboutMeToEntries(
+  aboutMeMd: string,
+  now: string,
+  existing: { id: string }[] = []
+): MemoryEntry[] {
+  const out: MemoryEntry[] = [];
+  const counter = [...existing];
+  for (const raw of aboutMeMd.split("\n")) {
+    const li = raw.match(/^\s*-\s+(.*)$/);
+    if (!li) continue;
+    const text = li[1].trim();
+    if (!text || /^[（(].*[)）]$/.test(text)) continue;
+    const id = nextEntryId(counter);
+    counter.push({ id });
+    out.push({
+      id,
+      text,
+      kinds: ["preference"],
+      scopes: ["global"],
+      source: "user",
+      modality: "text",
+      relations: [],
+      createdAt: now,
+      updatedAt: now,
+    });
+  }
+  return out;
+}
+
+// ── 一键找关联：内容相近的条目自动建边（机械初版，四字滑窗有交集即相近）──
+
+/** 文本切成所有连续四字窗口的集合，去空白。太短的文本返回空集不参与。 */
+function textWindows(text: string): Set<string> {
+  const s = text.replace(/\s+/g, "");
+  const out = new Set<string>();
+  for (let i = 0; i + 4 <= s.length; i++) out.add(s.slice(i, i + 4));
+  return out;
+}
+
+/**
+ * 给现行条目找内容相近的关联：两条正文共享连续四字就建 related 边。
+ * 已有边不重复建，已归档的不参与。边加在编号小的一侧，单向存储双向可查。
+ * 返回 { entries, added }，added 为 0 表示没找到新关联。
+ */
+export function suggestRelationsByOverlap(
+  entries: MemoryEntry[],
+  minShared = 1
+): { entries: MemoryEntry[]; added: number } {
+  const act = entries.filter((e) => !e.archived);
+  const win = new Map(act.map((e) => [e.id, textWindows(e.text)]));
+  const newEdges = new Map<string, string[]>();
+  let added = 0;
+  for (let i = 0; i < act.length; i++) {
+    for (let j = i + 1; j < act.length; j++) {
+      const a = act[i], b = act[j];
+      const already =
+        a.relations.some((r) => r.to === b.id) || b.relations.some((r) => r.to === a.id);
+      if (already) continue;
+      const wa = win.get(a.id)!, wb = win.get(b.id)!;
+      if (!wa.size || !wb.size) continue;
+      let shared = 0;
+      for (const w of wa) {
+        if (wb.has(w)) {
+          shared++;
+          if (shared >= minShared) break;
+        }
+      }
+      if (shared >= minShared) {
+        const list = newEdges.get(a.id) ?? [];
+        list.push(b.id);
+        newEdges.set(a.id, list);
+        added++;
+      }
+    }
+  }
+  if (!added) return { entries, added: 0 };
+  return {
+    entries: entries.map((e) => {
+      const tos = newEdges.get(e.id);
+      if (!tos) return e;
+      return {
+        ...e,
+        relations: [...e.relations, ...tos.map((to) => ({ to, rel: "related" as const }))],
+      };
+    }),
+    added,
+  };
+}
+
 // ── AI 整理提示词：把导出 md 交给外部 AI 调标签、提关联，改完导回 ────
 
 export function buildRefinePrompt(exportedMd: string): string {

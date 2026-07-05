@@ -12,6 +12,8 @@ import {
   parseMarkdown,
   reconcileImport,
   syncEntriesWithCards,
+  migrateAboutMeToEntries,
+  suggestRelationsByOverlap,
   migrateCardsToEntries,
   toJsonl,
   fromJsonl,
@@ -252,6 +254,37 @@ eq(planR4.updates[0].relations[0].rel, "from_same_session", "只改正文时原�
 // 新行带箭头
 const planR5 = reconcileImport([rA], parseMarkdown("- 新条带关联 #事实 @用户 ->m-0501"));
 eq(planR5.adds[0].relTargets, ["m-0501"], "新行解析出关联目标");
+
+console.log("\n[N] 关于我迁移全局库");
+const aboutMd = `# About Me
+## 基本信息
+- 姓名 Jiajia
+- 位置 伦敦
+
+说明性段落不该被收。
+## 偏好
+- 简洁优先
+`;
+const ame = migrateAboutMeToEntries(aboutMd, "2026-07-05");
+eq(ame.length, 3, "三条列表行进全局库");
+ok(ame.every((e) => e.kinds[0] === "preference" && e.scopes[0] === "global"), "偏好类全局归属");
+eq(ame[0].id, "m-0001", "从头发号");
+
+console.log("\n[O] 一键找关联，内容相近");
+const s1 = mk({ id: "m-0601", text: "优先做升权捞回补齐闭环", kinds: ["decision"] });
+const s2 = mk({ id: "m-0602", text: "升权捞回是本轮重点", kinds: ["state"] });
+const s3 = mk({ id: "m-0603", text: "完全无关的另一件事", kinds: ["fact"] });
+const sug = suggestRelationsByOverlap([s1, s2, s3]);
+eq(sug.added, 1, "相近的一对建一条边");
+const linked1 = sug.entries.find((e) => e.id === "m-0601")!;
+eq(linked1.relations[0]?.to, "m-0602", "边加在编号小的一侧指向大的");
+ok(sug.entries.find((e) => e.id === "m-0603")!.relations.length === 0, "无关条目不建边");
+// 幂等：已有边不重复建
+const sug2 = suggestRelationsByOverlap(sug.entries);
+eq(sug2.added, 0, "重复运行不再新增");
+// 归档的不参与
+const sug3 = suggestRelationsByOverlap([s1, { ...s2, archived: { reason: "manual", at: "2026-07-05" } }]);
+eq(sug3.added, 0, "已归档不参与找关联");
 
 console.log(`\n结果：${pass} passed, ${fail} failed\n`);
 if (fail > 0) process.exit(1);
