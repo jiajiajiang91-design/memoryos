@@ -265,7 +265,14 @@ const DICT: Record<string, Entry> = {
   "entryLib.back": { zh: "返回", en: "Back" },
   "entryLib.userView": { zh: "给我看", en: "For me" },
   "entryLib.aiView": { zh: "给 AI 看", en: "For AI" },
-  "entryLib.injectionToggle": { zh: "开场注入使用条目库", en: "Session start uses entries" },
+  "dashboard.injectionTitle": { zh: "AI 开场读什么", en: "What the AI reads first" },
+  "dashboard.injectionCards": { zh: "记忆卡片", en: "Memory Cards" },
+  "dashboard.injectionEntries": { zh: "记忆库", en: "Memory Library" },
+  "dashboard.injectionHint": {
+    zh: "复制开场提示词和 AI 连接都从这里取记忆。记忆库按重要程度自动挑选，不超过 1200 字",
+    en: "Both the start prompt and connected AIs read from this source. Library picks by importance within 1200 chars",
+  },
+  "entryLib.injectionToggle": { zh: "AI 开场读记忆库", en: "AI reads the library first" },
   "entryLib.injectionOnToast": { zh: "已切换：开场注入用条目库拼的文本", en: "Switched: session start now uses entries" },
   "entryLib.injectionOffToast": { zh: "已切回：开场注入用记忆卡片", en: "Switched back: session start uses Memory Cards" },
   "entryLib.aiViewHintLive": {

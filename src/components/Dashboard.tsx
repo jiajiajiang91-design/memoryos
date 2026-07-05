@@ -28,6 +28,9 @@ type Props = {
   onEditCards: () => void;
   /** 记忆库（条目双视图，记忆展示形态第 1 轮）。 */
   onOpenEntryLib: () => void;
+  /** AI 开场读什么：false=记忆卡片，true=记忆库（07-04 确认的注入来源开关）。 */
+  entryInjectionOn: boolean;
+  onToggleInjection: () => void;
   /** 信任模式开关（06-10 用户拍板）。 */
   onToggleTrustMode: () => void;
   /** Inbox 里 status=pending 的条数；>0 时显示「待审」入口。 */
@@ -117,7 +120,7 @@ export default function Dashboard(props: Props) {
               </button>
               <button
                 onClick={props.onOpenEntryLib}
-                className="h-10 px-4 rounded-lg bg-surface border border-hairline shadow-btn text-ink font-medium text-sm inline-flex items-center gap-2 hover:border-slate/40 hover:text-slate hover:-translate-y-px hover:shadow-btn-hover transition-all"
+                className="h-10 px-4 rounded-lg bg-slate text-white shadow-btn font-medium text-sm inline-flex items-center gap-2 hover:-translate-y-px hover:shadow-btn-hover transition-all"
               >
                 <LayoutGrid size={16} strokeWidth={1.5} />
                 {t("entryLib.open")}
@@ -140,6 +143,31 @@ export default function Dashboard(props: Props) {
                 <Plus size={16} strokeWidth={1.5} />
                 {t("dashboard.importHandoff")}
               </button>
+            </div>
+
+            <div className="mb-8 px-4 py-3 rounded-xl border border-hairline bg-surface-soft flex items-center gap-3 flex-wrap">
+              <span className="text-[13px] font-medium text-ink shrink-0">{t("dashboard.injectionTitle")}</span>
+              <div className="flex rounded-lg border border-hairline overflow-hidden text-[13px] bg-surface">
+                <button
+                  onClick={() => props.entryInjectionOn && props.onToggleInjection()}
+                  className={`h-8 px-3.5 transition-colors ${
+                    !props.entryInjectionOn ? "bg-slate text-white font-medium" : "text-ink-soft hover:text-ink"
+                  }`}
+                >
+                  {t("dashboard.injectionCards")}
+                </button>
+                <button
+                  onClick={() => !props.entryInjectionOn && props.onToggleInjection()}
+                  className={`h-8 px-3.5 transition-colors ${
+                    props.entryInjectionOn ? "bg-slate text-white font-medium" : "text-ink-soft hover:text-ink"
+                  }`}
+                >
+                  {t("dashboard.injectionEntries")}
+                </button>
+              </div>
+              <span className="text-[12px] text-ink-faint leading-relaxed flex-1 min-w-[200px]">
+                {t("dashboard.injectionHint")}
+              </span>
             </div>
 
             <hr className="border-hairline mb-6" />

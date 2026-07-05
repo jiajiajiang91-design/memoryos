@@ -624,6 +624,15 @@ export default function App() {
     showToast(t("entryLib.moved"));
   };
 
+  // AI 开场读什么：记忆卡片 ⇄ 记忆库（主页和记忆库页共用同一开关）。
+  const toggleEntryInjection = async () => {
+    if (!workspace || !project) return;
+    const next = !project.entryInjection;
+    await setProjectEntryInjection(workspace, project.slug, next);
+    setRefreshKey((k) => k + 1);
+    showToast(next ? t("entryLib.injectionOnToast") : t("entryLib.injectionOffToast"));
+  };
+
   const onReviewCancel = async () => {
     setReview(null);
     await refreshPending();
@@ -875,13 +884,7 @@ export default function App() {
           onUpdateEntry={onUpdateEntry}
           onMoveEntry={onMoveEntry}
           entryInjectionOn={project.entryInjection ?? false}
-          onToggleInjection={async () => {
-            if (!workspace || !project) return;
-            const next = !project.entryInjection;
-            await setProjectEntryInjection(workspace, project.slug, next);
-            setRefreshKey((k) => k + 1);
-            showToast(next ? t("entryLib.injectionOnToast") : t("entryLib.injectionOffToast"));
-          }}
+          onToggleInjection={toggleEntryInjection}
         />
       ) : project ? (
         <Dashboard
@@ -923,7 +926,9 @@ export default function App() {
           onOpenBootstrap={() => setBootstrapOpen(true)}
           onMigrateCards={() => setMigrateCardsOpen(true)}
           onEditCards={() => openCoreFile("cards.md")}
-          onOpenEntryLib={openEntryLib}
+          onOpenEntryLib={() => openEntryLib()}
+          entryInjectionOn={project.entryInjection ?? false}
+          onToggleInjection={toggleEntryInjection}
           onToggleTrustMode={async () => {
             if (!workspace || !project) return;
             const next = !project.mcpAutoApply;
