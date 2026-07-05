@@ -547,98 +547,7 @@ export default function EntryLibraryPage(props: Props) {
             )}
           </div>
         ) : effectiveView === "graph" ? (
-          (() => {
-            // 星图第一版：只画有关联的记忆，圆环布局，蓝线是边
-            const involved = new Set<string>();
-            for (const e of active) {
-              for (const r of e.relations) {
-                if (active.some((x) => x.id === r.to)) {
-                  involved.add(e.id);
-                  involved.add(r.to);
-                }
-              }
-            }
-            const nodes = active.filter((e) => involved.has(e.id));
-            if (nodes.length === 0) {
-              return (
-                <div className="max-w-[560px] mx-auto mt-16 text-center">
-                  <p className="text-[14px] text-ink-faint mb-6">{t("entryLib.graphEmpty")}</p>
-                  {!readOnly && (
-                    <button
-                      onClick={props.onAutoRelate}
-                      title={t("entryLib.autoRelateHint")}
-                      className="h-10 px-5 rounded-lg bg-slate text-white font-medium text-sm inline-flex items-center gap-2 shadow-btn hover:-translate-y-px hover:shadow-btn-hover transition-all"
-                    >
-                      <Link2 size={15} strokeWidth={1.5} /> {t("entryLib.autoRelate")}
-                    </button>
-                  )}
-                </div>
-              );
-            }
-            const W = 760, H = 520, cx = W / 2, cy = H / 2;
-            const R = Math.min(W, H) / 2 - 70;
-            const pos = new Map<string, { x: number; y: number }>();
-            nodes.forEach((e, i) => {
-              const a = (2 * Math.PI * i) / nodes.length - Math.PI / 2;
-              pos.set(e.id, { x: cx + R * Math.cos(a), y: cy + R * Math.sin(a) });
-            });
-            return (
-              <div className="max-w-[808px]">
-                <div className="flex items-center gap-3 mb-3">
-                  <p className="text-[13px] text-ink-faint flex-1">{t("entryLib.graphHint")}</p>
-                  {!readOnly && (
-                    <button
-                      onClick={props.onAutoRelate}
-                      title={t("entryLib.autoRelateHint")}
-                      className="h-8 px-3 rounded-lg border border-hairline text-[12px] text-ink-soft inline-flex items-center gap-1.5 hover:text-ink hover:border-slate/40 transition-colors"
-                    >
-                      <Link2 size={12} strokeWidth={1.5} /> {t("entryLib.autoRelate")}
-                    </button>
-                  )}
-                </div>
-                <svg viewBox={`0 0 ${W} ${H}`} className="w-full rounded-xl border border-hairline bg-surface-soft">
-                  {nodes.flatMap((e) =>
-                    e.relations
-                      .filter((r) => pos.has(r.to))
-                      .map((r) => {
-                        const a = pos.get(e.id)!;
-                        const b = pos.get(r.to)!;
-                        return (
-                          <line
-                            key={`${e.id}->${r.to}`}
-                            x1={a.x} y1={a.y} x2={b.x} y2={b.y}
-                            stroke="#002FA7" strokeOpacity=".35" strokeWidth="1.5"
-                          />
-                        );
-                      })
-                  )}
-                  {nodes.map((e) => {
-                    const p = pos.get(e.id)!;
-                    const tier = tierOf(e);
-                    const fill = tier === "high" ? "#002FA7" : tier === "mid" ? "#8A93A8" : "#C6CBD6";
-                    return (
-                      <g key={`n-${e.scopes[0] ?? ""}-${e.id}`}>
-                        <title>{e.text}</title>
-                        <circle cx={p.x} cy={p.y} r={e.pinned ? 8 : 6} fill={fill} />
-                        <text
-                          x={p.x} y={p.y - 12} textAnchor="middle"
-                          className="fill-current text-ink-soft" fontSize="10"
-                        >
-                          {e.id}
-                        </text>
-                        <text
-                          x={p.x} y={p.y + 22} textAnchor="middle"
-                          className="fill-current text-ink-faint" fontSize="9"
-                        >
-                          {e.text.length > 12 ? e.text.slice(0, 12) + "…" : e.text}
-                        </text>
-                      </g>
-                    );
-                  })}
-                </svg>
-              </div>
-            );
-          })()
+          <GraphView entries={active} readOnly={readOnly} onAutoRelate={props.onAutoRelate} />
         ) : (
           <div className="max-w-[808px]">
             <div className="mb-3 flex items-center gap-3 text-[13px] text-ink-soft">
@@ -668,6 +577,181 @@ export default function EntryLibraryPage(props: Props) {
             </pre>
           </div>
         )}
+      </div>
+    </div>
+  );
+}
+
+// ── 星图（力导向布局，参照常见知识图谱的交互习惯）─────────────────
+// 相连的记忆自然聚成一团，孤立的散在外围；点越大关联越多，颜色是权重档；
+// 悬停高亮它和它的邻居，其他淡下去；实线是相关，虚线是同一次对话，橙线是取代。
+
+function GraphView(props: {
+  entries: MemoryEntry[];
+  readOnly: boolean;
+  onAutoRelate: () => void;
+}) {
+  const t = useT();
+  const [hoverId, setHoverId] = useState<string | null>(null);
+
+  const { nodes, edges, degree } = useMemo(() => {
+    const ids = new Set(props.entries.map((e) => e.id));
+    const edges = props.entries.flatMap((e) =>
+      e.relations
+        .filter((r) => ids.has(r.to))
+        .map((r) => ({ from: e.id, to: r.to, rel: r.rel }))
+    );
+    const degree = new Map<string, number>();
+    for (const ed of edges) {
+      degree.set(ed.from, (degree.get(ed.from) ?? 0) + 1);
+      degree.set(ed.to, (degree.get(ed.to) ?? 0) + 1);
+    }
+    return { nodes: props.entries, edges, degree };
+  }, [props.entries]);
+
+  const W = 760, H = 560;
+
+  // 力导向：确定性初始位置（编号散列，布局稳定可复现），迭代后相连聚团
+  const pos = useMemo(() => {
+    const n = nodes.length;
+    const p = new Map<string, { x: number; y: number }>();
+    if (!n) return p;
+    const hash = (s: string) => {
+      let h = 7;
+      for (const c of s) h = (h * 31 + c.charCodeAt(0)) >>> 0;
+      return h;
+    };
+    const xs = nodes.map((e) => {
+      const h = hash(e.id + e.text.slice(0, 4));
+      return { id: e.id, x: 60 + (h % (W - 120)), y: 60 + ((h >>> 10) % (H - 120)) };
+    });
+    const idx = new Map(xs.map((v, i) => [v.id, i]));
+    const springs = edges.map((ed) => [idx.get(ed.from)!, idx.get(ed.to)!] as const);
+    for (let it = 0; it < 220; it++) {
+      const cool = 1 - it / 220;
+      const fx = new Array(n).fill(0);
+      const fy = new Array(n).fill(0);
+      for (let i = 0; i < n; i++) {
+        for (let j = i + 1; j < n; j++) {
+          const dx = xs[i].x - xs[j].x;
+          const dy = xs[i].y - xs[j].y;
+          const d2 = Math.max(dx * dx + dy * dy, 64);
+          const f = 2600 / d2;
+          const d = Math.sqrt(d2);
+          fx[i] += (dx / d) * f; fy[i] += (dy / d) * f;
+          fx[j] -= (dx / d) * f; fy[j] -= (dy / d) * f;
+        }
+      }
+      for (const [a, b] of springs) {
+        const dx = xs[b].x - xs[a].x;
+        const dy = xs[b].y - xs[a].y;
+        const d = Math.max(Math.sqrt(dx * dx + dy * dy), 1);
+        const f = (d - 95) * 0.03;
+        fx[a] += (dx / d) * f; fy[a] += (dy / d) * f;
+        fx[b] -= (dx / d) * f; fy[b] -= (dy / d) * f;
+      }
+      for (let i = 0; i < n; i++) {
+        fx[i] += (W / 2 - xs[i].x) * 0.012;
+        fy[i] += (H / 2 - xs[i].y) * 0.012;
+        xs[i].x = Math.min(W - 40, Math.max(40, xs[i].x + fx[i] * cool));
+        xs[i].y = Math.min(H - 40, Math.max(40, xs[i].y + fy[i] * cool));
+      }
+    }
+    for (const v of xs) p.set(v.id, { x: v.x, y: v.y });
+    return p;
+  }, [nodes, edges]);
+
+  if (edges.length === 0) {
+    return (
+      <div className="max-w-[560px] mx-auto mt-16 text-center">
+        <p className="text-[14px] text-ink-faint mb-6">{t("entryLib.graphEmpty")}</p>
+        {!props.readOnly && (
+          <button
+            onClick={props.onAutoRelate}
+            title={t("entryLib.autoRelateHint")}
+            className="h-10 px-5 rounded-lg bg-slate text-white font-medium text-sm inline-flex items-center gap-2 shadow-btn hover:-translate-y-px hover:shadow-btn-hover transition-all"
+          >
+            <Link2 size={15} strokeWidth={1.5} /> {t("entryLib.autoRelate")}
+          </button>
+        )}
+      </div>
+    );
+  }
+
+  const neighbors = new Set<string>();
+  if (hoverId) {
+    neighbors.add(hoverId);
+    for (const ed of edges) {
+      if (ed.from === hoverId) neighbors.add(ed.to);
+      if (ed.to === hoverId) neighbors.add(ed.from);
+    }
+  }
+  const dim = (id: string) => (hoverId ? (neighbors.has(id) ? 1 : 0.12) : 1);
+  const edgeStroke = (rel: string) =>
+    rel === "supersedes" ? "#B4491E" : "#002FA7";
+
+  return (
+    <div className="max-w-[808px]">
+      <div className="flex items-center gap-3 mb-3">
+        <p className="text-[13px] text-ink-faint flex-1">{t("entryLib.graphHint")}</p>
+        {!props.readOnly && (
+          <button
+            onClick={props.onAutoRelate}
+            title={t("entryLib.autoRelateHint")}
+            className="h-8 px-3 rounded-lg border border-hairline text-[12px] text-ink-soft inline-flex items-center gap-1.5 hover:text-ink hover:border-slate/40 transition-colors"
+          >
+            <Link2 size={12} strokeWidth={1.5} /> {t("entryLib.autoRelate")}
+          </button>
+        )}
+      </div>
+      <svg viewBox={`0 0 ${W} ${H}`} className="w-full rounded-xl border border-hairline bg-surface-soft">
+        {edges.map((ed) => {
+          const a = pos.get(ed.from)!;
+          const b = pos.get(ed.to)!;
+          const lit = hoverId ? ed.from === hoverId || ed.to === hoverId : true;
+          return (
+            <line
+              key={`${ed.from}->${ed.to}`}
+              x1={a.x} y1={a.y} x2={b.x} y2={b.y}
+              stroke={edgeStroke(ed.rel)}
+              strokeOpacity={lit ? 0.45 : 0.06}
+              strokeWidth={lit && hoverId ? 2 : 1.4}
+              strokeDasharray={ed.rel === "from_same_session" ? "4 3" : undefined}
+            />
+          );
+        })}
+        {nodes.map((e) => {
+          const p = pos.get(e.id)!;
+          const tier = tierOf(e);
+          const fill = tier === "high" ? "#002FA7" : tier === "mid" ? "#8A93A8" : "#C6CBD6";
+          const deg = degree.get(e.id) ?? 0;
+          const r = 4 + Math.min(8, deg * 1.6) + (e.pinned ? 1.5 : 0);
+          const showLabel = hoverId ? neighbors.has(e.id) : deg > 0;
+          return (
+            <g
+              key={`n-${e.scopes[0] ?? ""}-${e.id}`}
+              opacity={dim(e.id)}
+              onMouseEnter={() => setHoverId(e.id)}
+              onMouseLeave={() => setHoverId(null)}
+              style={{ cursor: "default" }}
+            >
+              <title>{e.text}</title>
+              <circle cx={p.x} cy={p.y} r={r} fill={fill} stroke={e.pinned ? "#002FA7" : "none"} strokeWidth={e.pinned ? 2 : 0} />
+              {showLabel && (
+                <text x={p.x} y={p.y + r + 12} textAnchor="middle" className="fill-current text-ink-soft" fontSize="9.5">
+                  {e.text.length > 14 ? e.text.slice(0, 14) + "…" : e.text}
+                </text>
+              )}
+            </g>
+          );
+        })}
+      </svg>
+      <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-ink-faint">
+        <span><span className="inline-block w-5 border-t-2 border-[#002FA7] align-middle mr-1" />{t("entryLib.legendRelated")}</span>
+        <span><span className="inline-block w-5 border-t-2 border-dashed border-[#002FA7] align-middle mr-1" />{t("entryLib.legendSession")}</span>
+        <span><span className="inline-block w-5 border-t-2 border-[#B4491E] align-middle mr-1" />{t("entryLib.legendSupersedes")}</span>
+        <span>{t("entryLib.legendSize")}</span>
+        <span>{t("entryLib.legendColor")}</span>
       </div>
     </div>
   );
