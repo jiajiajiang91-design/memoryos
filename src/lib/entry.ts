@@ -336,6 +336,35 @@ export function buildInjectionFromEntries(
   return { text, charCount: entryCharCount(text), includedIds, droppedIds };
 }
 
+// ── 技能汇集：把散在项目库和全局库、标了技能类型的条目挑出来移进技能库 ────
+
+/** 汇集候选：标了技能类型、未归档、还没归到技能库的条目。 */
+export function skillCandidates(entries: MemoryEntry[]): MemoryEntry[] {
+  return entries.filter(
+    (e) => !e.archived && e.kinds.includes("skill") && !e.scopes.includes("skill")
+  );
+}
+
+// ── 注入合并：项目库和技能库拼一起给 AI，共用 1200 字预算（07-10 确认）──
+
+/**
+ * 合并项目库和技能库供注入。两库编号各自独立会撞号（都从 m-0001 发），
+ * 技能库条目的 id 和关联目标统一加 s: 前缀再合并，关联加分和舍弃统计不串库。
+ */
+export function mergeLibsForInjection(
+  projectEntries: MemoryEntry[],
+  skillEntries: MemoryEntry[]
+): MemoryEntry[] {
+  return [
+    ...projectEntries,
+    ...skillEntries.map((e) => ({
+      ...e,
+      id: "s:" + e.id,
+      relations: e.relations.map((r) => ({ ...r, to: "s:" + r.to })),
+    })),
+  ];
+}
+
 // ── 关于我迁移：about_me.md 机械解析进全局库，每条列表行一条偏好条目 ────
 
 export function migrateAboutMeToEntries(

@@ -47,7 +47,10 @@ import {
   buildRefinePrompt,
   migrateAboutMeToEntries,
   suggestRelationsByOverlap,
+  skillCandidates,
+  mergeLibsForInjection,
   type MemoryEntry,
+  type EntryKind,
 } from "./lib/entry";
 import EntryLibraryPage from "./components/EntryLibraryPage";
 import { ask } from "@tauri-apps/api/dialog";
@@ -649,6 +652,63 @@ export default function App() {
     showToast(t("entryLib.moved"));
   };
 
+  // 手写一条：进当前库，来源用户，默认类型按库给（标签之后可用编辑器改）。
+  const onAddEntry = async (text: string) => {
+    if (!workspace || !entryLib || entryLib.lib.kind === "all") return;
+    const body = text.trim();
+    if (!body) return;
+    const today = new Date().toISOString();
+    const scope = entryLib.lib.kind === "project" ? entryLib.lib.slug : entryLib.lib.kind;
+    const kind: EntryKind =
+      entryLib.lib.kind === "skill" ? "skill" : entryLib.lib.kind === "global" ? "preference" : "misc";
+    const next: MemoryEntry[] = [
+      ...entryLib.entries,
+      {
+        id: nextEntryId(entryLib.entries),
+        text: body, kinds: [kind], scopes: [scope], source: "user",
+        modality: "text", relations: [],
+        createdAt: today, updatedAt: today,
+      },
+    ];
+    await writeEntriesLib(workspace, entryLib.lib, next);
+    setEntryLib({ ...entryLib, entries: next });
+    showToast(t("entryLib.addDone"));
+  };
+
+  // 一键汇集：把各项目库和全局库里标了技能类型的条目移进技能库。
+  // 移动语义同 onMoveEntry：目标库重发编号、源库移除（07-10 确认汇集=移动）。
+  const onCollectSkills = async () => {
+    if (!workspace || !entryLib || entryLib.lib.kind !== "skill") return;
+    const today = new Date().toISOString();
+    const sources: EntryLib[] = [
+      ...projects.map((p): EntryLib => ({ kind: "project", slug: p.slug })),
+      { kind: "global" },
+    ];
+    const skillEntries = [...entryLib.entries];
+    const counter: { id: string }[] = [...skillEntries];
+    let moved = 0;
+    for (const src of sources) {
+      const r = await readEntriesLib(workspace, src);
+      const cands = skillCandidates(r.entries);
+      if (!cands.length) continue;
+      const candIds = new Set(cands.map((c) => c.id));
+      for (const c of cands) {
+        const id = nextEntryId(counter);
+        counter.push({ id });
+        skillEntries.push({ ...c, id, scopes: ["skill"], updatedAt: today });
+        moved++;
+      }
+      await writeEntriesLib(workspace, src, r.entries.filter((e) => !candIds.has(e.id)));
+    }
+    if (!moved) {
+      showToast(t("entryLib.collectNone"));
+      return;
+    }
+    await writeEntriesLib(workspace, { kind: "skill" }, skillEntries);
+    setEntryLib({ ...entryLib, entries: skillEntries });
+    showToast(t("entryLib.collectDone", { n: moved }));
+  };
+
   // AI 开场读什么：记忆卡片 ⇄ 记忆库（主页和记忆库页共用同一开关）。
   const toggleEntryInjection = async () => {
     if (!workspace || !project) return;
@@ -912,6 +972,8 @@ export default function App() {
           onCopyRefinePrompt={onCopyRefinePrompt}
           onUpdateEntry={onUpdateEntry}
           onMoveEntry={onMoveEntry}
+          onAddEntry={onAddEntry}
+          onCollectSkills={onCollectSkills}
           entryInjectionOn={project.entryInjection ?? false}
           onToggleInjection={toggleEntryInjection}
         />
@@ -930,8 +992,12 @@ export default function App() {
             if (project.entryInjection) {
               const lib = await readEntriesLib(workspace, { kind: "project", slug: project.slug });
               const activeEntries = lib.entries.filter((e) => !e.archived);
+              // 回落规则以项目库为准；有条目时再拼上技能库，合并按权重挑（07-10 确认）
               if (activeEntries.length) {
-                const inj = buildInjectionFromEntries(activeEntries);
+                const skillLib = await readEntriesLib(workspace, { kind: "skill" });
+                const inj = buildInjectionFromEntries(
+                  mergeLibsForInjection(activeEntries, skillLib.entries)
+                );
                 cards = `# 记忆条目 · ${project.name}\n\n${inj.text}`;
                 archiveHint = false;
               }

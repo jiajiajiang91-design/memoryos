@@ -4,7 +4,7 @@
 // 切换真实注入链路等六卡迁移完成后再做（设计稿第 9 节 S5 之后）。
 
 import { useMemo, useState } from "react";
-import { ArrowLeft, Bot, User, Sparkles, LayoutGrid, Upload, Download, Search, Link2, Pin, Archive, Undo2, Pencil, Share2 } from "lucide-react";
+import { ArrowLeft, Bot, User, Sparkles, LayoutGrid, Upload, Download, Search, Link2, Pin, Archive, Undo2, Pencil, Share2, Plus, FolderInput } from "lucide-react";
 import { toTier, scoreEntry, THRESHOLDS, type Tier } from "../lib/weight";
 import {
   ALL_KINDS,
@@ -41,6 +41,10 @@ type Props = {
   onUpdateEntry: (id: string, patch: Partial<MemoryEntry>) => void;
   /** 跨库移动：换归属，编号在目标库重发。 */
   onMoveEntry: (id: string, target: "project" | "global" | "skill") => void;
+  /** 手写一条进当前库（技能库内容引导，所有可编辑库共用）。 */
+  onAddEntry: (text: string) => Promise<void>;
+  /** 一键汇集：把各库标了技能类型的条目移进技能库，仅技能库页用。 */
+  onCollectSkills: () => void;
   /** 开场注入来源开关：开了用条目库，关了用记忆卡片（07-04 确认）。 */
   entryInjectionOn: boolean;
   onToggleInjection: () => void;
@@ -86,6 +90,20 @@ export default function EntryLibraryPage(props: Props) {
   const [importOpen, setImportOpen] = useState(false);
   const [importText, setImportText] = useState("");
   const [importBusy, setImportBusy] = useState(false);
+  const [addOpen, setAddOpen] = useState(false);
+  const [addText, setAddText] = useState("");
+  const [addBusy, setAddBusy] = useState(false);
+  const submitAdd = async () => {
+    if (addBusy || !addText.trim()) return;
+    setAddBusy(true);
+    try {
+      await props.onAddEntry(addText);
+      setAddText("");
+      setAddOpen(false);
+    } finally {
+      setAddBusy(false);
+    }
+  };
   const [query, setQuery] = useState("");
   // 筛选器：类型 来源 权重档，空为不过滤
   const [fKind, setFKind] = useState<EntryKind | "">("");
@@ -191,11 +209,40 @@ export default function EntryLibraryPage(props: Props) {
         )}
 
         {props.entries.length === 0 ? (
+          props.libKind === "skill" ? (
+            // 技能库空状态引导：说清放什么、给例子、手写第一条、一键汇集两条路
+            <div className="max-w-[560px] mx-auto mt-16 text-center">
+              <p className="text-[15px] text-ink mb-2">{t("entryLib.skillEmptyHint")}</p>
+              <p className="text-[13px] text-ink-faint mb-6">{t("entryLib.skillExamples")}</p>
+              <div className="flex gap-2 mb-4">
+                <input
+                  value={addText}
+                  onChange={(e) => setAddText(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && submitAdd()}
+                  placeholder={t("entryLib.addPlaceholder")}
+                  className="flex-1 h-10 px-3 rounded-lg border border-hairline bg-surface text-[13px] focus:outline-none focus:border-slate/50"
+                />
+                <button
+                  disabled={addBusy || !addText.trim()}
+                  onClick={submitAdd}
+                  className="h-10 px-4 rounded-lg bg-slate text-white text-[13px] font-medium disabled:opacity-40 hover:-translate-y-px transition-all"
+                >
+                  {t("entryLib.addApply")}
+                </button>
+              </div>
+              <button
+                onClick={props.onCollectSkills}
+                title={t("entryLib.collectSkillsHint")}
+                className="h-10 px-5 rounded-lg border border-hairline text-sm text-ink-soft inline-flex items-center gap-2 hover:text-ink hover:border-slate/40 transition-colors"
+              >
+                <FolderInput size={15} strokeWidth={1.5} />
+                {t("entryLib.collectSkills")}
+              </button>
+            </div>
+          ) : (
           <div className="max-w-[560px] mx-auto mt-16 text-center">
-            <p className="text-[15px] text-ink-faint mb-6">
-              {props.libKind === "skill" ? t("entryLib.skillEmptyHint") : t("entryLib.empty")}
-            </p>
-            {props.canMigrate && props.libKind !== "skill" && (
+            <p className="text-[15px] text-ink-faint mb-6">{t("entryLib.empty")}</p>
+            {props.canMigrate && (
               <button
                 onClick={props.onMigrate}
                 className="h-10 px-5 rounded-lg bg-slate text-white font-medium text-sm inline-flex items-center gap-2 shadow-btn hover:-translate-y-px hover:shadow-btn-hover transition-all"
@@ -205,6 +252,7 @@ export default function EntryLibraryPage(props: Props) {
               </button>
             )}
           </div>
+          )
         ) : effectiveView === "user" ? (
           <div className="max-w-[808px] space-y-8">
             {readOnly && (
@@ -255,6 +303,21 @@ export default function EntryLibraryPage(props: Props) {
               {!readOnly && (
                 <>
                   <button
+                    onClick={() => setAddOpen((v) => !v)}
+                    className="h-9 px-3.5 rounded-lg border border-hairline text-[13px] text-ink-soft inline-flex items-center gap-1.5 hover:text-ink hover:border-slate/40 transition-colors"
+                  >
+                    <Plus size={14} strokeWidth={1.5} /> {t("entryLib.addEntry")}
+                  </button>
+                  {props.libKind === "skill" && (
+                    <button
+                      onClick={props.onCollectSkills}
+                      title={t("entryLib.collectSkillsHint")}
+                      className="h-9 px-3.5 rounded-lg border border-hairline text-[13px] text-ink-soft inline-flex items-center gap-1.5 hover:text-ink hover:border-slate/40 transition-colors"
+                    >
+                      <FolderInput size={14} strokeWidth={1.5} /> {t("entryLib.collectSkills")}
+                    </button>
+                  )}
+                  <button
                     onClick={props.onExportMd}
                     className="h-9 px-3.5 rounded-lg border border-hairline text-[13px] text-ink-soft inline-flex items-center gap-1.5 hover:text-ink hover:border-slate/40 transition-colors"
                   >
@@ -275,6 +338,25 @@ export default function EntryLibraryPage(props: Props) {
                 </>
               )}
             </div>
+            {addOpen && (
+              <div className="px-4 py-3 rounded-xl border border-hairline bg-surface-soft flex gap-2">
+                <input
+                  value={addText}
+                  onChange={(e) => setAddText(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && submitAdd()}
+                  placeholder={t("entryLib.addPlaceholder")}
+                  autoFocus
+                  className="flex-1 h-9 px-3 rounded-lg border border-hairline bg-surface text-[13px] focus:outline-none focus:border-slate/50"
+                />
+                <button
+                  disabled={addBusy || !addText.trim()}
+                  onClick={submitAdd}
+                  className="h-9 px-4 rounded-lg bg-slate text-white text-[13px] font-medium disabled:opacity-40 hover:-translate-y-px transition-all"
+                >
+                  {t("entryLib.addApply")}
+                </button>
+              </div>
+            )}
             {importOpen && (
               <div className="px-4 py-4 rounded-xl border border-hairline bg-surface-soft space-y-3">
                 <textarea

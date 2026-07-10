@@ -10,7 +10,7 @@ import {
   compareSessionsDesc,
   extractLatestCompactContext,
 } from "../../src/lib/sessionParse";
-import { fromJsonl, buildInjectionFromEntries } from "../../src/lib/entry";
+import { fromJsonl, buildInjectionFromEntries, mergeLibsForInjection } from "../../src/lib/entry";
 import type { Session } from "../../src/types";
 
 export type ProjectListEntry = {
@@ -135,8 +135,14 @@ export async function getProjectMemory(
     if (meta.entryInjection) {
       const lib = fromJsonl(await readTextSafe(path.join(dir, "entries.jsonl")));
       const active = lib.entries.filter((e) => !e.archived);
+      // 回落规则以项目库为准；有条目时再拼上技能库，与 app 同逻辑（07-10 确认）
       if (active.length) {
-        const inj = buildInjectionFromEntries(active);
+        const skillLib = fromJsonl(
+          await readTextSafe(path.join(workspace, "entries", "skill.jsonl"))
+        );
+        const inj = buildInjectionFromEntries(
+          mergeLibsForInjection(active, skillLib.entries)
+        );
         cards = `# 记忆条目 · ${match.name}\n\n${inj.text}`;
       }
     }

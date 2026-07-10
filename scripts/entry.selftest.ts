@@ -14,6 +14,8 @@ import {
   syncEntriesWithCards,
   migrateAboutMeToEntries,
   suggestRelationsByOverlap,
+  skillCandidates,
+  mergeLibsForInjection,
   migrateCardsToEntries,
   toJsonl,
   fromJsonl,
@@ -285,6 +287,31 @@ eq(sug2.added, 0, "重复运行不再新增");
 // 归档的不参与
 const sug3 = suggestRelationsByOverlap([s1, { ...s2, archived: { reason: "manual", at: "2026-07-05" } }]);
 eq(sug3.added, 0, "已归档不参与找关联");
+
+console.log("\n[P] 技能汇集候选");
+const c1 = mk({ id: "m-0701", text: "写周报的固定套路", kinds: ["skill"], scopes: ["proj"] });
+const c2 = mk({ id: "m-0702", text: "已在技能库的", kinds: ["skill"], scopes: ["skill"] });
+const c3 = mk({ id: "m-0703", text: "归档的技能", kinds: ["skill"], scopes: ["proj"], archived: { reason: "manual", at: "2026-07-10" } });
+const c4 = mk({ id: "m-0704", text: "普通决策", kinds: ["decision"], scopes: ["proj"] });
+const c5 = mk({ id: "m-0705", text: "多标签含技能", kinds: ["decision", "skill"], scopes: ["proj"] });
+eq(skillCandidates([c1, c2, c3, c4, c5]).map((e) => e.id), ["m-0701", "m-0705"], "只挑标技能、未归档、不在技能库的");
+
+console.log("\n[Q] 注入合并项目库加技能库");
+const pj1 = mk({ id: "m-0001", text: "项目里的决策", kinds: ["decision"], weight: 80, relations: [{ to: "m-0002", rel: "related" }] });
+const pj2 = mk({ id: "m-0002", text: "项目里的状态", kinds: ["state"] });
+const sk1 = mk({ id: "m-0001", text: "技能库第一条", kinds: ["skill"], scopes: ["skill"], weight: 80, relations: [{ to: "m-0002", rel: "related" }] });
+const sk2 = mk({ id: "m-0002", text: "技能库第二条", kinds: ["skill"], scopes: ["skill"] });
+const merged = mergeLibsForInjection([pj1, pj2], [sk1, sk2]);
+eq(merged.length, 4, "撞号的四条都保留");
+eq(merged.map((e) => e.id), ["m-0001", "m-0002", "s:m-0001", "s:m-0002"], "技能条目编号加前缀不撞");
+eq(merged[2].relations[0]?.to, "s:m-0002", "技能条目关联目标同步换前缀");
+eq(merged[0].relations[0]?.to, "m-0002", "项目条目关联不动");
+const mInj = buildInjectionFromEntries(merged);
+eq(mInj.includedIds.length, 4, "合并后全部入选");
+ok(mInj.text.includes("## 技能") && mInj.text.includes("技能库第一条"), "注入文本出技能区块");
+// 高权重关联加分不串库：项目 m-0001 关联 m-0002，只该加分项目侧那条
+const tight = buildInjectionFromEntries(merged, 26);
+ok(tight.includedIds.includes("m-0001"), "预算紧时高权重项目条目入选");
 
 console.log(`\n结果：${pass} passed, ${fail} failed\n`);
 if (fail > 0) process.exit(1);
