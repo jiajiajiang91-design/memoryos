@@ -583,7 +583,7 @@ export async function autoApplyTrustedInbox(workspace: string): Promise<number> 
 // 三种库平级：项目库 projects/<slug>/entries.jsonl；
 // 全局库 entries/global.jsonl；技能库 entries/skill.jsonl。
 
-import { toJsonl, fromJsonl, syncEntriesWithCards, type MemoryEntry, type JsonlParseResult } from "./entry";
+import { toJsonl, fromJsonl, syncEntriesWithCards, EMPTY_SUGGESTIONS, type MemoryEntry, type JsonlParseResult, type EntrySuggestions } from "./entry";
 
 /** 库标识：项目 slug、"global" 全局库、"skill" 技能库。 */
 export type EntryLib = { kind: "project"; slug: string } | { kind: "global" } | { kind: "skill" };
@@ -618,6 +618,49 @@ export async function writeEntriesLib(
   await writeTextFile(tmp, toJsonl(entries));
   await renameFile(tmp, path);
   if (lib.kind === "project") await touchProjectUpdatedAt(workspace, lib.slug);
+}
+
+// 关联提案旁挂文件（07-10 提案走审核）：待确认队列 + 已驳回防复提名单，
+// 提案不进 entries.jsonl，接受才建边。项目库 entry-suggestions.json，
+// 全局/技能库 entries/<kind>.suggestions.json。
+
+async function suggestionsFilePath(workspace: string, lib: EntryLib): Promise<string> {
+  if (lib.kind === "project") {
+    return await join(workspace, "projects", lib.slug, "entry-suggestions.json");
+  }
+  const dir = await join(workspace, "entries");
+  if (!(await exists(dir))) await createDir(dir, { recursive: true });
+  return await join(dir, `${lib.kind}.suggestions.json`);
+}
+
+/** 读一个库的提案文件。不存在或损坏都回空，不阻塞主流程。 */
+export async function readEntrySuggestions(
+  workspace: string,
+  lib: EntryLib
+): Promise<EntrySuggestions> {
+  const path = await suggestionsFilePath(workspace, lib);
+  if (!(await exists(path))) return { ...EMPTY_SUGGESTIONS };
+  try {
+    const obj = JSON.parse(await readTextFile(path));
+    return {
+      pendingRelations: Array.isArray(obj?.pendingRelations) ? obj.pendingRelations : [],
+      rejectedRelations: Array.isArray(obj?.rejectedRelations) ? obj.rejectedRelations : [],
+    };
+  } catch {
+    return { ...EMPTY_SUGGESTIONS };
+  }
+}
+
+/** 写一个库的提案文件（覆盖，原子写同 entries）。 */
+export async function writeEntrySuggestions(
+  workspace: string,
+  lib: EntryLib,
+  s: EntrySuggestions
+): Promise<void> {
+  const path = await suggestionsFilePath(workspace, lib);
+  const tmp = path + ".tmp";
+  await writeTextFile(tmp, JSON.stringify(s, null, 2));
+  await renameFile(tmp, path);
 }
 
 /**

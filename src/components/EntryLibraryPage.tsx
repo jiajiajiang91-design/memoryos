@@ -14,6 +14,7 @@ import {
   buildInjectionFromEntries,
   type MemoryEntry,
   type EntryKind,
+  type RelationProposal,
 } from "../lib/entry";
 import { useT } from "../lib/i18n";
 
@@ -45,6 +46,11 @@ type Props = {
   onAddEntry: (text: string) => Promise<void>;
   /** 一键汇集：把各库标了技能类型的条目移进技能库，仅技能库页用。 */
   onCollectSkills: () => void;
+  /** 关联提案待确认队列（07-10 提案走审核）：接受建边，驳回防复提。 */
+  pendingRelations: RelationProposal[];
+  onAcceptRelation: (p: RelationProposal) => void;
+  onRejectRelation: (p: RelationProposal) => void;
+  onAcceptAllRelations: () => void;
   /** 开场注入来源开关：开了用条目库，关了用记忆卡片（07-04 确认）。 */
   entryInjectionOn: boolean;
   onToggleInjection: () => void;
@@ -629,7 +635,15 @@ export default function EntryLibraryPage(props: Props) {
             )}
           </div>
         ) : effectiveView === "graph" ? (
-          <GraphView entries={active} readOnly={readOnly} onAutoRelate={props.onAutoRelate} />
+          <GraphView
+            entries={active}
+            readOnly={readOnly}
+            onAutoRelate={props.onAutoRelate}
+            pendingRelations={props.pendingRelations}
+            onAcceptRelation={props.onAcceptRelation}
+            onRejectRelation={props.onRejectRelation}
+            onAcceptAllRelations={props.onAcceptAllRelations}
+          />
         ) : (
           <div className="max-w-[808px]">
             <div className="mb-3 flex items-center gap-3 text-[13px] text-ink-soft">
@@ -668,10 +682,72 @@ export default function EntryLibraryPage(props: Props) {
 // 相连的记忆自然聚成一团，孤立的散在外围；点越大关联越多，颜色是权重档；
 // 悬停高亮它和它的邻居，其他淡下去；实线是相关，虚线是同一次对话，橙线是取代。
 
+// 关联提案审核面板：一键找关联的产出在这里等确认，接受建边、不要防复提。
+function ProposalPanel(props: {
+  entries: MemoryEntry[];
+  pending: RelationProposal[];
+  onAccept: (p: RelationProposal) => void;
+  onReject: (p: RelationProposal) => void;
+  onAcceptAll: () => void;
+}) {
+  const t = useT();
+  if (!props.pending.length) return null;
+  const textOf = (id: string) => {
+    const e = props.entries.find((x) => x.id === id);
+    const s = e?.text ?? id;
+    return s.length > 22 ? s.slice(0, 22) + "…" : s;
+  };
+  return (
+    <div className="mb-4 rounded-xl border border-[#EAD9A8] bg-[#FFFBEF]">
+      <div className="px-4 py-2.5 flex items-center gap-3 border-b border-[#EAD9A8]/60">
+        <span className="text-[13px] font-medium text-[#A37A1C]">
+          {t("entryLib.relPending", { n: props.pending.length })}
+        </span>
+        <span className="text-[12px] text-ink-faint flex-1">{t("entryLib.relPendingHint")}</span>
+        <button
+          onClick={props.onAcceptAll}
+          className="h-7 px-2.5 rounded-lg bg-slate text-white text-[12px] font-medium hover:-translate-y-px transition-all"
+        >
+          {t("entryLib.relAcceptAll")}
+        </button>
+      </div>
+      <div className="px-4 py-2 max-h-48 overflow-y-auto divide-y divide-[#EAD9A8]/40">
+        {props.pending.map((p) => (
+          <div key={`${p.from}->${p.to}`} className="py-2 flex items-center gap-2 text-[13px]">
+            <span className="text-ink flex-1 min-w-0 truncate" title={props.entries.find((x) => x.id === p.from)?.text}>
+              {textOf(p.from)}
+            </span>
+            <Link2 size={12} strokeWidth={1.5} className="text-[#A37A1C] shrink-0" />
+            <span className="text-ink flex-1 min-w-0 truncate" title={props.entries.find((x) => x.id === p.to)?.text}>
+              {textOf(p.to)}
+            </span>
+            <button
+              onClick={() => props.onAccept(p)}
+              className="h-7 px-2.5 rounded-lg border border-hairline text-[12px] text-[#1E7A46] hover:border-[#1E7A46]/50 transition-colors shrink-0"
+            >
+              {t("entryLib.relAccept")}
+            </button>
+            <button
+              onClick={() => props.onReject(p)}
+              className="h-7 px-2.5 rounded-lg border border-hairline text-[12px] text-ink-faint hover:text-ink transition-colors shrink-0"
+            >
+              {t("entryLib.relReject")}
+            </button>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function GraphView(props: {
   entries: MemoryEntry[];
   readOnly: boolean;
   onAutoRelate: () => void;
+  pendingRelations: RelationProposal[];
+  onAcceptRelation: (p: RelationProposal) => void;
+  onRejectRelation: (p: RelationProposal) => void;
+  onAcceptAllRelations: () => void;
 }) {
   const t = useT();
   const [hoverId, setHoverId] = useState<string | null>(null);
@@ -745,17 +821,28 @@ function GraphView(props: {
 
   if (edges.length === 0) {
     return (
-      <div className="max-w-[560px] mx-auto mt-16 text-center">
-        <p className="text-[14px] text-ink-faint mb-6">{t("entryLib.graphEmpty")}</p>
+      <div className="max-w-[640px] mx-auto mt-10">
         {!props.readOnly && (
-          <button
-            onClick={props.onAutoRelate}
-            title={t("entryLib.autoRelateHint")}
-            className="h-10 px-5 rounded-lg bg-slate text-white font-medium text-sm inline-flex items-center gap-2 shadow-btn hover:-translate-y-px hover:shadow-btn-hover transition-all"
-          >
-            <Link2 size={15} strokeWidth={1.5} /> {t("entryLib.autoRelate")}
-          </button>
+          <ProposalPanel
+            entries={props.entries}
+            pending={props.pendingRelations}
+            onAccept={props.onAcceptRelation}
+            onReject={props.onRejectRelation}
+            onAcceptAll={props.onAcceptAllRelations}
+          />
         )}
+        <div className="text-center mt-6">
+          <p className="text-[14px] text-ink-faint mb-6">{t("entryLib.graphEmpty")}</p>
+          {!props.readOnly && (
+            <button
+              onClick={props.onAutoRelate}
+              title={t("entryLib.autoRelateHint")}
+              className="h-10 px-5 rounded-lg bg-slate text-white font-medium text-sm inline-flex items-center gap-2 shadow-btn hover:-translate-y-px hover:shadow-btn-hover transition-all"
+            >
+              <Link2 size={15} strokeWidth={1.5} /> {t("entryLib.autoRelate")}
+            </button>
+          )}
+        </div>
       </div>
     );
   }
@@ -774,6 +861,15 @@ function GraphView(props: {
 
   return (
     <div className="max-w-[808px]">
+      {!props.readOnly && (
+        <ProposalPanel
+          entries={props.entries}
+          pending={props.pendingRelations}
+          onAccept={props.onAcceptRelation}
+          onReject={props.onRejectRelation}
+          onAcceptAll={props.onAcceptAllRelations}
+        />
+      )}
       <div className="flex items-center gap-3 mb-3">
         <p className="text-[13px] text-ink-faint flex-1">{t("entryLib.graphHint")}</p>
         {!props.readOnly && (

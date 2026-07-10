@@ -396,7 +396,9 @@ export function migrateAboutMeToEntries(
   return out;
 }
 
-// ── 一键找关联：内容相近的条目自动建边（机械初版，四字滑窗有交集即相近）──
+// ── 一键找关联：内容相近产出提案，用户确认才建边（07-10 提案走审核）────
+// 机械初版四字滑窗有交集即相近。提案不直接入库：接受才建边，驳回记名单防复提，
+// 和外部写回必经收件箱是同一条纪律。
 
 /** 文本切成所有连续四字窗口的集合，去空白。太短的文本返回空集不参与。 */
 function textWindows(text: string): Set<string> {
@@ -406,25 +408,35 @@ function textWindows(text: string): Set<string> {
   return out;
 }
 
+/** 一条关联提案：from 恒为编号小的一侧，和建边落点一致。 */
+export type RelationProposal = { from: string; to: string };
+
+/** 提案的防复提键，驳回名单存这个。 */
+export function relPairKey(p: RelationProposal): string {
+  return `${p.from}->${p.to}`;
+}
+
 /**
- * 给现行条目找内容相近的关联：两条正文共享连续四字就建 related 边。
- * 已有边不重复建，已归档的不参与。边加在编号小的一侧，单向存储双向可查。
- * 返回 { entries, added }，added 为 0 表示没找到新关联。
+ * 找内容相近的关联提案：两条现行正文共享连续四字即一条提案。
+ * 已有边（双向）、已驳回、已归档的都不出。只产提案不改条目。
  */
-export function suggestRelationsByOverlap(
+export function proposeRelationsByOverlap(
   entries: MemoryEntry[],
+  rejectedKeys: string[] = [],
   minShared = 1
-): { entries: MemoryEntry[]; added: number } {
+): RelationProposal[] {
+  const rejected = new Set(rejectedKeys);
   const act = entries.filter((e) => !e.archived);
   const win = new Map(act.map((e) => [e.id, textWindows(e.text)]));
-  const newEdges = new Map<string, string[]>();
-  let added = 0;
+  const out: RelationProposal[] = [];
   for (let i = 0; i < act.length; i++) {
     for (let j = i + 1; j < act.length; j++) {
       const a = act[i], b = act[j];
       const already =
         a.relations.some((r) => r.to === b.id) || b.relations.some((r) => r.to === a.id);
       if (already) continue;
+      const p: RelationProposal = a.id <= b.id ? { from: a.id, to: b.id } : { from: b.id, to: a.id };
+      if (rejected.has(relPairKey(p))) continue;
       const wa = win.get(a.id)!, wb = win.get(b.id)!;
       if (!wa.size || !wb.size) continue;
       let shared = 0;
@@ -434,26 +446,66 @@ export function suggestRelationsByOverlap(
           if (shared >= minShared) break;
         }
       }
-      if (shared >= minShared) {
-        const list = newEdges.get(a.id) ?? [];
-        list.push(b.id);
-        newEdges.set(a.id, list);
-        added++;
-      }
+      if (shared >= minShared) out.push(p);
     }
   }
-  if (!added) return { entries, added: 0 };
-  return {
-    entries: entries.map((e) => {
-      const tos = newEdges.get(e.id);
-      if (!tos) return e;
-      return {
-        ...e,
-        relations: [...e.relations, ...tos.map((to) => ({ to, rel: "related" as const }))],
-      };
-    }),
-    added,
-  };
+  return out;
+}
+
+/** 接受一条提案：建 related 边在编号小的一侧。目标不存在或已有边则原样返回。 */
+export function acceptRelationProposal(
+  entries: MemoryEntry[],
+  p: RelationProposal
+): MemoryEntry[] {
+  const from = entries.find((e) => e.id === p.from);
+  const to = entries.find((e) => e.id === p.to);
+  if (!from || !to) return entries;
+  const already =
+    from.relations.some((r) => r.to === p.to) || to.relations.some((r) => r.to === p.from);
+  if (already) return entries;
+  return entries.map((e) =>
+    e.id === p.from
+      ? { ...e, relations: [...e.relations, { to: p.to, rel: "related" as const }] }
+      : e
+  );
+}
+
+/**
+ * 一键找关联的旧入口：提案全部直接接受。保留给测试和批量场景，
+ * UI 已改走提案审核，不再调用这个。
+ */
+export function suggestRelationsByOverlap(
+  entries: MemoryEntry[],
+  minShared = 1
+): { entries: MemoryEntry[]; added: number } {
+  const proposals = proposeRelationsByOverlap(entries, [], minShared);
+  let cur = entries;
+  for (const p of proposals) cur = acceptRelationProposal(cur, p);
+  return { entries: cur, added: proposals.length };
+}
+
+/** 提案旁挂文件的内容：待确认队列 + 已驳回名单（防复提）。 */
+export type EntrySuggestions = {
+  pendingRelations: RelationProposal[];
+  rejectedRelations: string[];
+};
+
+export const EMPTY_SUGGESTIONS: EntrySuggestions = { pendingRelations: [], rejectedRelations: [] };
+
+/** 新提案并进已有队列，按防复提键去重，顺序保持先来的在前。 */
+export function mergeProposals(
+  pending: RelationProposal[],
+  fresh: RelationProposal[]
+): RelationProposal[] {
+  const seen = new Set(pending.map(relPairKey));
+  const out = [...pending];
+  for (const p of fresh) {
+    const k = relPairKey(p);
+    if (seen.has(k)) continue;
+    seen.add(k);
+    out.push(p);
+  }
+  return out;
 }
 
 // ── AI 整理提示词：把导出 md 交给外部 AI 调标签、提关联，改完导回 ────

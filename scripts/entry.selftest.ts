@@ -14,6 +14,10 @@ import {
   syncEntriesWithCards,
   migrateAboutMeToEntries,
   suggestRelationsByOverlap,
+  proposeRelationsByOverlap,
+  acceptRelationProposal,
+  mergeProposals,
+  relPairKey,
   skillCandidates,
   mergeLibsForInjection,
   migrateCardsToEntries,
@@ -272,21 +276,29 @@ eq(ame.length, 3, "三条列表行进全局库");
 ok(ame.every((e) => e.kinds[0] === "preference" && e.scopes[0] === "global"), "偏好类全局归属");
 eq(ame[0].id, "m-0001", "从头发号");
 
-console.log("\n[O] 一键找关联，内容相近");
+console.log("\n[O] 一键找关联，提案走审核");
 const s1 = mk({ id: "m-0601", text: "优先做升权捞回补齐闭环", kinds: ["decision"] });
 const s2 = mk({ id: "m-0602", text: "升权捞回是本轮重点", kinds: ["state"] });
 const s3 = mk({ id: "m-0603", text: "完全无关的另一件事", kinds: ["fact"] });
-const sug = suggestRelationsByOverlap([s1, s2, s3]);
-eq(sug.added, 1, "相近的一对建一条边");
-const linked1 = sug.entries.find((e) => e.id === "m-0601")!;
-eq(linked1.relations[0]?.to, "m-0602", "边加在编号小的一侧指向大的");
-ok(sug.entries.find((e) => e.id === "m-0603")!.relations.length === 0, "无关条目不建边");
-// 幂等：已有边不重复建
-const sug2 = suggestRelationsByOverlap(sug.entries);
-eq(sug2.added, 0, "重复运行不再新增");
+const props1 = proposeRelationsByOverlap([s1, s2, s3]);
+eq(props1, [{ from: "m-0601", to: "m-0602" }], "相近的一对出一条提案，from 是编号小的");
+ok([s1, s2, s3].every((e) => e.relations.length === 0), "只产提案不改条目");
+// 接受建边
+const acc = acceptRelationProposal([s1, s2, s3], props1[0]);
+eq(acc.find((e) => e.id === "m-0601")!.relations[0]?.to, "m-0602", "接受后边在编号小的一侧");
+eq(proposeRelationsByOverlap(acc), [], "已有边不再复提");
+// 驳回防复提
+eq(proposeRelationsByOverlap([s1, s2, s3], [relPairKey(props1[0])]), [], "已驳回不再复提");
 // 归档的不参与
-const sug3 = suggestRelationsByOverlap([s1, { ...s2, archived: { reason: "manual", at: "2026-07-05" } }]);
-eq(sug3.added, 0, "已归档不参与找关联");
+eq(proposeRelationsByOverlap([s1, { ...s2, archived: { reason: "manual", at: "2026-07-05" } }]), [], "已归档不出提案");
+// 队列合并去重
+const merged1 = mergeProposals([{ from: "m-0601", to: "m-0602" }], [{ from: "m-0601", to: "m-0602" }, { from: "m-0601", to: "m-0603" }]);
+eq(merged1.length, 2, "并队列按键去重");
+eq(merged1[0], { from: "m-0601", to: "m-0602" }, "先来的保持在前");
+// 旧入口 = 提案全接受，行为不变
+const sug = suggestRelationsByOverlap([s1, s2, s3]);
+eq(sug.added, 1, "旧入口相近的一对建一条边");
+eq(suggestRelationsByOverlap(sug.entries).added, 0, "旧入口幂等");
 
 console.log("\n[P] 技能汇集候选");
 const c1 = mk({ id: "m-0701", text: "写周报的固定套路", kinds: ["skill"], scopes: ["proj"] });

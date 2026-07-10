@@ -34,6 +34,8 @@ import {
   autoApplyTrustedInbox,
   readEntriesLib,
   writeEntriesLib,
+  readEntrySuggestions,
+  writeEntrySuggestions,
   syncProjectEntriesFromCards,
   type EntryLib,
 } from "./lib/fs";
@@ -46,11 +48,17 @@ import {
   buildInjectionFromEntries,
   buildRefinePrompt,
   migrateAboutMeToEntries,
-  suggestRelationsByOverlap,
+  proposeRelationsByOverlap,
+  acceptRelationProposal,
+  mergeProposals,
+  relPairKey,
+  EMPTY_SUGGESTIONS,
   skillCandidates,
   mergeLibsForInjection,
   type MemoryEntry,
   type EntryKind,
+  type EntrySuggestions,
+  type RelationProposal,
 } from "./lib/entry";
 import EntryLibraryPage from "./components/EntryLibraryPage";
 import { ask } from "@tauri-apps/api/dialog";
@@ -181,6 +189,7 @@ export default function App() {
     lib: EntryLib | { kind: "all" };
     entries: MemoryEntry[];
     badLineCount: number;
+    suggestions: EntrySuggestions;
   } | null>(null);
   const [viewingCoreFile, setViewingCoreFile] = useState<
     null | { filename: string; fullPath: string; content: string; rawFile: string }
@@ -498,14 +507,15 @@ export default function App() {
         merged.push(...r.entries);
         bad += r.badLines.length;
       }
-      setEntryLib({ lib: { kind: "all" }, entries: merged, badLineCount: bad });
+      setEntryLib({ lib: { kind: "all" }, entries: merged, badLineCount: bad, suggestions: { ...EMPTY_SUGGESTIONS } });
       return;
     }
     const target: EntryLib | null =
       lib ?? (project ? { kind: "project", slug: project.slug } : null);
     if (!target) return;
     const r = await readEntriesLib(workspace, target);
-    setEntryLib({ lib: target, entries: r.entries, badLineCount: r.badLines.length });
+    const suggestions = await readEntrySuggestions(workspace, target);
+    setEntryLib({ lib: target, entries: r.entries, badLineCount: r.badLines.length, suggestions });
   };
   const onMigrateEntries = async () => {
     if (!workspace || !entryLib) return;
@@ -515,28 +525,76 @@ export default function App() {
       const aboutMe = await readAboutMe(workspace);
       const migrated = migrateAboutMeToEntries(aboutMe, today);
       await writeEntriesLib(workspace, { kind: "global" }, migrated);
-      setEntryLib({ lib: { kind: "global" }, entries: migrated, badLineCount: 0 });
+      setEntryLib({ ...entryLib, lib: { kind: "global" }, entries: migrated, badLineCount: 0 });
       showToast(t("entryLib.migrateDone", { n: migrated.length }));
       return;
     }
     if (!project) return;
     const migrated = migrateCardsToEntries(project.cardsMarkdown, project.slug, today);
     await writeEntriesLib(workspace, { kind: "project", slug: project.slug }, migrated);
-    setEntryLib({ lib: { kind: "project", slug: project.slug }, entries: migrated, badLineCount: 0 });
+    setEntryLib({ ...entryLib, lib: { kind: "project", slug: project.slug }, entries: migrated, badLineCount: 0 });
     showToast(t("entryLib.migrateDone", { n: migrated.length }));
   };
 
-  // 一键找关联：内容相近的条目自动建边（机械初版，AI 通道做精修）。
+  // 一键找关联（07-10 提案走审核）：机械找相近只产提案进待确认队列，
+  // 接受才建边，驳回记防复提名单。已驳回和已有边不再复提。
   const onAutoRelate = async () => {
     if (!workspace || !entryLib || entryLib.lib.kind === "all") return;
-    const res = suggestRelationsByOverlap(entryLib.entries);
-    if (res.added === 0) {
-      showToast(t("entryLib.autoRelateNone"));
+    const fresh = proposeRelationsByOverlap(entryLib.entries, entryLib.suggestions.rejectedRelations);
+    const pendingRelations = mergeProposals(entryLib.suggestions.pendingRelations, fresh);
+    const newCount = pendingRelations.length - entryLib.suggestions.pendingRelations.length;
+    if (newCount === 0) {
+      showToast(t(pendingRelations.length ? "entryLib.autoRelatePendingOnly" : "entryLib.autoRelateNone", { n: pendingRelations.length }));
       return;
     }
-    await writeEntriesLib(workspace, entryLib.lib, res.entries);
-    setEntryLib({ ...entryLib, entries: res.entries });
-    showToast(t("entryLib.autoRelateDone", { n: res.added }));
+    const suggestions = { ...entryLib.suggestions, pendingRelations };
+    await writeEntrySuggestions(workspace, entryLib.lib, suggestions);
+    setEntryLib({ ...entryLib, suggestions });
+    showToast(t("entryLib.autoRelateProposed", { n: newCount }));
+  };
+
+  // 接受一条关联提案：建边写库，提案出队。
+  const onAcceptRelation = async (p: RelationProposal) => {
+    if (!workspace || !entryLib || entryLib.lib.kind === "all") return;
+    const entries = acceptRelationProposal(entryLib.entries, p);
+    const suggestions = {
+      ...entryLib.suggestions,
+      pendingRelations: entryLib.suggestions.pendingRelations.filter(
+        (x) => relPairKey(x) !== relPairKey(p)
+      ),
+    };
+    await writeEntriesLib(workspace, entryLib.lib, entries);
+    await writeEntrySuggestions(workspace, entryLib.lib, suggestions);
+    setEntryLib({ ...entryLib, entries, suggestions });
+  };
+
+  // 驳回一条关联提案：出队并记防复提名单，下次一键找关联不再出。
+  const onRejectRelation = async (p: RelationProposal) => {
+    if (!workspace || !entryLib || entryLib.lib.kind === "all") return;
+    const key = relPairKey(p);
+    const suggestions: EntrySuggestions = {
+      pendingRelations: entryLib.suggestions.pendingRelations.filter((x) => relPairKey(x) !== key),
+      rejectedRelations: entryLib.suggestions.rejectedRelations.includes(key)
+        ? entryLib.suggestions.rejectedRelations
+        : [...entryLib.suggestions.rejectedRelations, key],
+    };
+    await writeEntrySuggestions(workspace, entryLib.lib, suggestions);
+    setEntryLib({ ...entryLib, suggestions });
+  };
+
+  // 全部接受：队列里的提案逐条建边，一次写库。
+  const onAcceptAllRelations = async () => {
+    if (!workspace || !entryLib || entryLib.lib.kind === "all") return;
+    let entries = entryLib.entries;
+    for (const p of entryLib.suggestions.pendingRelations) {
+      entries = acceptRelationProposal(entries, p);
+    }
+    const n = entryLib.suggestions.pendingRelations.length;
+    const suggestions = { ...entryLib.suggestions, pendingRelations: [] };
+    await writeEntriesLib(workspace, entryLib.lib, entries);
+    await writeEntrySuggestions(workspace, entryLib.lib, suggestions);
+    setEntryLib({ ...entryLib, entries, suggestions });
+    showToast(t("entryLib.relAcceptedAll", { n }));
   };
 
   // 导出 md：复制到剪贴板，记录导出时间供导回时识别两边都改过的冲突。
@@ -609,7 +667,7 @@ export default function App() {
       });
     }
     await writeEntriesLib(workspace, entryLib.lib, next);
-    setEntryLib({ lib: entryLib.lib, entries: next, badLineCount: 0 });
+    setEntryLib({ ...entryLib, entries: next, badLineCount: 0 });
     showToast(t("entryLib.importDone", {
       u: updateById.size, a: plan.adds.length, d: confirmedDeletes.length,
     }));
@@ -974,6 +1032,10 @@ export default function App() {
           onMoveEntry={onMoveEntry}
           onAddEntry={onAddEntry}
           onCollectSkills={onCollectSkills}
+          pendingRelations={entryLib.suggestions.pendingRelations}
+          onAcceptRelation={onAcceptRelation}
+          onRejectRelation={onRejectRelation}
+          onAcceptAllRelations={onAcceptAllRelations}
           entryInjectionOn={project.entryInjection ?? false}
           onToggleInjection={toggleEntryInjection}
         />
