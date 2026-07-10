@@ -22,6 +22,7 @@ import {
   mergeLibsForInjection,
   similarityScore,
   searchSimilar,
+  searchEntries,
   migrateCardsToEntries,
   toJsonl,
   fromJsonl,
@@ -378,6 +379,35 @@ console.log("\n[S] 相近检索（本地相似度）");
   // 高分在前
   const ranked = searchSimilar([t3, t2], "主色克莱因蓝", new Set());
   eq(ranked[0]?.id, "m-0802", "高分在前");
+}
+
+console.log("\n[T] 统一检索入口 searchEntries（人和 AI 同一条路）");
+{
+  const k1 = mk({ id: "m-0901", text: "决定用克莱因蓝做主色", kinds: ["decision"], weight: 30, relations: [{ to: "m-0903", rel: "related" }] });
+  const k2 = mk({ id: "m-0902", text: "克莱因蓝按钮悬停变深", kinds: ["fact"], weight: 80 });
+  const k3 = mk({ id: "m-0903", text: "配色定稿后不再反复", kinds: ["constraint"] });
+  const k4 = mk({ id: "m-0904", text: "主色确定后周边色跟随", kinds: ["fact"] });
+  const k5 = mk({ id: "m-0905", text: "毫不相干的另一件事", kinds: ["misc"] });
+  const res = searchEntries([k1, k2, k3, k4, k5], "克莱因蓝");
+  eq(res.filter((h) => h.match === "keyword").map((h) => h.entry.id), ["m-0902", "m-0901"], "关键词命中按权重高在前");
+  eq(res.filter((h) => h.match === "related").map((h) => h.entry.id), ["m-0903"], "命中条目的关联带出");
+  ok(!res.some((h) => h.entry.id === "m-0905"), "无关条目不出现");
+  // 反向关联也带出：k1 指向 k3，搜到 k3 时 k1 应被带出
+  const rev = searchEntries([k1, k2, k3, k4, k5], "不再反复");
+  eq(rev.filter((h) => h.match === "related").map((h) => h.entry.id), ["m-0901"], "指向命中者的条目反向带出");
+  // 相近兜底：整词搜不到（"配色方案"不在任何正文里），字对相近的浮出
+  const sim = searchEntries([k1, k2, k3, k4, k5], "配色方案");
+  eq(sim.filter((h) => h.match === "keyword").length, 0, "整词无直接命中");
+  ok(sim.some((h) => h.match === "similar" && h.entry.id === "m-0903"), "相近兜底捞到换说法的条目");
+  // filter 只约束关键词命中，关联带出不受限
+  const flt = searchEntries([k1, k2, k3, k4, k5], "克莱因蓝", { filter: (e) => e.kinds.includes("decision") });
+  eq(flt.filter((h) => h.match === "keyword").map((h) => h.entry.id), ["m-0901"], "筛选器约束关键词命中");
+  eq(flt.filter((h) => h.match === "related").map((h) => h.entry.id), ["m-0903"], "带出的关联不受筛选器约束");
+  // 编号也能搜，归档照常可搜（检索是捞回通道）
+  eq(searchEntries([k1, k2], "m-0902")[0]?.entry.id, "m-0902", "按编号命中");
+  const arch = searchEntries([{ ...k2, archived: { reason: "manual", at: "2026-07-10" } }], "克莱因蓝");
+  eq(arch[0]?.entry.id, "m-0902", "已归档条目照常搜到");
+  eq(searchEntries([k1, k2], ""), [], "空查询返回空");
 }
 
 console.log(`\n结果：${pass} passed, ${fail} failed\n`);

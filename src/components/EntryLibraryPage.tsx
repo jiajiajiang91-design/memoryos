@@ -13,7 +13,7 @@ import {
   SOURCE_LABELS,
   groupByKind,
   buildInjectionFromEntries,
-  searchSimilar,
+  searchEntries,
   type MemoryEntry,
   type EntryKind,
   type RelationProposal,
@@ -119,37 +119,26 @@ export default function EntryLibraryPage(props: Props) {
   const [fTier, setFTier] = useState<Tier | "">("");
   // 标签编辑器：展开中的条目编号，null 为收起（记忆可换框）
   const [editingId, setEditingId] = useState<string | null>(null);
-  // 关键词检索：搜正文和编号，直面混乱性痛点的第一版
-  const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase();
+  // 检索走三端共用的 searchEntries（关键词+关联带出+相近兜底），和 MCP
+  // search_memory 同一条路。筛选器只约束关键词命中，带出的关联不受限。
+  const { filtered, similar } = useMemo(() => {
     const pass = (e: MemoryEntry) => {
-      if (q && !e.text.toLowerCase().includes(q) && !e.id.toLowerCase().includes(q)) return false;
       if (fKind && !e.kinds.includes(fKind)) return false;
       if (fSource && e.source !== fSource) return false;
       if (fTier && tierOf(e) !== fTier) return false;
       return true;
     };
-    const hits = props.entries.filter(pass);
-    // 关联跳转（找出关系并输出落在检索侧）：关键词命中的条目，其关联的条目
-    // 双向一起带出，即使不含关键词。只在有关键词时生效，筛选器照常约束。
-    if (!q) return hits;
-    const hitIds = new Set(hits.map((e) => e.id));
-    const pulled = new Set(hitIds);
-    for (const e of props.entries) {
-      if (hitIds.has(e.id)) {
-        for (const r of e.relations) pulled.add(r.to); // 命中者指向的
-      } else if (e.relations.some((r) => hitIds.has(r.to))) {
-        pulled.add(e.id); // 指向命中者的
-      }
-    }
-    return props.entries.filter((e) => pulled.has(e.id));
-  }, [props.entries, query, fKind, fSource, fTier]);
-  // 相近检索：关键词没搜到的换个说法也能找到。已直接命中（含带出的关联）不重复出
-  const similar = useMemo(() => {
     const q = query.trim();
-    if (!q) return [];
-    return searchSimilar(props.entries, q, new Set(filtered.map((e) => e.id)));
-  }, [props.entries, query, filtered]);
+    if (!q) return { filtered: props.entries.filter(pass), similar: [] as MemoryEntry[] };
+    const hits = searchEntries(props.entries, q, { filter: pass });
+    const shownIds = new Set(
+      hits.filter((h) => h.match !== "similar").map((h) => h.entry.id)
+    );
+    return {
+      filtered: props.entries.filter((e) => shownIds.has(e.id)),
+      similar: hits.filter((h) => h.match === "similar").map((h) => h.entry),
+    };
+  }, [props.entries, query, fKind, fSource, fTier]);
   // 现行层进八类分组；已归档单独一区，捞回即回现行层
   const active = useMemo(() => filtered.filter((e) => !e.archived), [filtered]);
   const archivedList = useMemo(() => filtered.filter((e) => e.archived), [filtered]);
@@ -406,19 +395,16 @@ export default function EntryLibraryPage(props: Props) {
                   {filtered.length === 0 ? t("entryLib.similarOnly") : t("entryLib.similarAlso")}
                 </p>
                 <div className="flex flex-wrap gap-1.5">
-                  {similar.map((h) => {
-                    const e = props.entries.find((x) => x.id === h.id)!;
-                    return (
-                      <button
-                        key={`sim-${e.scopes[0] ?? ""}-${h.id}`}
-                        onClick={() => setQuery(h.id)}
-                        title={e.text}
-                        className="px-2.5 py-1 rounded-full text-[12px] border border-hairline text-ink-soft hover:text-ink hover:border-slate/40 transition-colors"
-                      >
-                        {e.text.length > 20 ? e.text.slice(0, 20) + "…" : e.text}
-                      </button>
-                    );
-                  })}
+                  {similar.map((e) => (
+                    <button
+                      key={`sim-${e.scopes[0] ?? ""}-${e.id}`}
+                      onClick={() => setQuery(e.id)}
+                      title={e.text}
+                      className="px-2.5 py-1 rounded-full text-[12px] border border-hairline text-ink-soft hover:text-ink hover:border-slate/40 transition-colors"
+                    >
+                      {e.text.length > 20 ? e.text.slice(0, 20) + "…" : e.text}
+                    </button>
+                  ))}
                 </div>
               </div>
             )}

@@ -10,16 +10,20 @@ import type { ProjectMemory } from "./workspace";
 
 // 把项目记忆注入成一段开始提示。server 不知道 UI 语言，默认 zh（app UI 全中文）。
 // cards 非空 = 现行卡模式：buildStartSessionPrompt 自动走 关于我+卡片原文 注入（与 app 同一函数，逐字一致）。
+// MCP 通道多一句拉取提示（复制粘贴路径的 AI 没工具可调，app 侧不加）。
 export function buildStartSessionToolPrompt(memory: ProjectMemory): string {
-  return buildStartSessionPrompt({
-    projectName: memory.projectName,
-    aboutMe: memory.aboutMe,
-    context: memory.context,
-    decisions: memory.decisions,
-    cards: memory.cards,
-    latestCompactContext: memory.latestCompactContext,
-    lang: "zh",
-  });
+  return (
+    buildStartSessionPrompt({
+      projectName: memory.projectName,
+      aboutMe: memory.aboutMe,
+      context: memory.context,
+      decisions: memory.decisions,
+      cards: memory.cards,
+      latestCompactContext: memory.latestCompactContext,
+      lang: "zh",
+    }) +
+    "\n\n提醒：上面的记忆是按重要程度挑选的摘要，不是全部。会话中聊到这里没有的旧决策、旧约定、做事方法时，先调用 search_memory 工具检索再回答，不要凭空补。"
+  );
 }
 
 export function buildEndSessionToolPrompt(projectName?: string): string {

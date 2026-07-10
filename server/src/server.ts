@@ -8,14 +8,14 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { looksGarbled } from "../../src/lib/inbox";
 import { normalizeSourceTool } from "../../src/lib/sourceTools";
-import { listProjects, getProjectMemory, matchProject } from "./workspace";
+import { listProjects, getProjectMemory, matchProject, searchMemory } from "./workspace";
 import { buildInboxItem, writeInboxItem } from "./inbox";
 import { buildStartSessionToolPrompt, buildEndSessionToolPrompt } from "./prompts";
 import { logServerEvent } from "./telemetry";
 import { writeMcpState } from "./state";
 
 export const SERVER_NAME = "memoryos";
-export const SERVER_VERSION = "0.4.0";
+export const SERVER_VERSION = "0.5.0";
 
 export function createServer(workspace: string): McpServer {
   const server = new McpServer({ name: SERVER_NAME, version: SERVER_VERSION });
@@ -63,7 +63,8 @@ export function createServer(workspace: string): McpServer {
       description:
         "读取某个项目的工作记忆（只读 pull）。若返回里 cards 非空 = 记忆卡片模式：以 cards（+ aboutMe）为准开始工作，" +
         "context/decisions 是历史档案，仅需要历史细节时再查。cards 为空则按旧约定读 about_me + 00_context + decisions + 最新 Compact Context。" +
-        "读到后请用一句话回述你的理解（我是谁、怎么协作 / 项目目标、现状与卡点 / 上次停在哪、本次从哪开始），确认后继续。",
+        "读到后请用一句话回述你的理解（我是谁、怎么协作 / 项目目标、现状与卡点 / 上次停在哪、本次从哪开始），确认后继续。" +
+        "注意：这里返回的记忆是按重要程度挑选过的摘要，不是全部——会话中聊到这里没有的旧决策、旧约定时，先用 search_memory 检索再回答，不要凭空补。",
       inputSchema: {
         project: z
           .string()
@@ -95,6 +96,56 @@ export function createServer(workspace: string): McpServer {
       return {
         content: [{ type: "text", text: JSON.stringify(memory, null, 2) }],
         structuredContent: memory as unknown as Record<string, unknown>,
+      };
+    }
+  );
+
+  // ── search_memory（会话中途拉取，只读）──
+  // 开场注入是"推"（按权重挑 1200 字），这个是"拉"：注入装不下的和归档的记忆
+  // 都能捞。与 app 记忆库页共用 searchEntries，命中带关联、搜不到按相近兜底。
+  server.registerTool(
+    "search_memory",
+    {
+      title: "检索记忆条目",
+      description:
+        "会话中途按关键词检索记忆条目库（只读）。开场注入只带按重要程度挑选的摘要，聊到里面没有的旧决策、旧约定、做事方法时用这个查，不要凭记忆猜。" +
+        "命中的条目会连同它关联的条目一起返回；关键词搜不到时自动按相近说法匹配；已归档的旧账也搜得到并标注。" +
+        "传 project 搜该项目库加全局库加技能库，不传搜全部。",
+      inputSchema: {
+        query: z.string().describe("检索词：关键词、条目编号或一个说法片段"),
+        project: z
+          .string()
+          .optional()
+          .describe("项目 slug 或项目名（容错匹配）。不传则搜全部项目"),
+      },
+    },
+    async ({ query, project }) => {
+      const result = await searchMemory(workspace, query, project);
+      await logServerEvent("search_memory", {
+        sourceClient: clientName(),
+        project: project ?? "(all)",
+        hits: result?.hits.length ?? -1,
+      });
+      await recordActivity("search_memory", project);
+      if (!result) {
+        const projects = await listProjects(workspace);
+        const names = projects.map((p) => p.name).join(" / ") || "（无项目）";
+        return {
+          content: [
+            {
+              type: "text",
+              text: `未找到匹配「${project}」的项目。当前 workspace 里的项目：${names}`,
+            },
+          ],
+          isError: true,
+        };
+      }
+      const text = result.hits.length
+        ? JSON.stringify(result, null, 2)
+        : `没有找到和「${query}」相关的记忆条目。可以换个关键词，或直接问用户。`;
+      return {
+        content: [{ type: "text", text }],
+        structuredContent: result as unknown as Record<string, unknown>,
       };
     }
   );

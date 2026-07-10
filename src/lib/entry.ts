@@ -553,6 +553,55 @@ export function searchSimilar(
   return hits.slice(0, limit);
 }
 
+// ── 统一检索入口：关键词命中 + 关联双向带出 + 相近兜底 ─────────────
+// 双视图同源纪律的检索版：人翻库（记忆库页搜索框）和 AI 拉取（MCP
+// search_memory）走同一个函数，避免两条检索路各自演化。
+
+export type EntrySearchHit = {
+  entry: MemoryEntry;
+  /** keyword 直接命中；related 被命中条目的关联带出；similar 换说法相近。 */
+  match: "keyword" | "related" | "similar";
+};
+
+/**
+ * 在一个库里检索。关键词命中正文或编号（不分大小写），命中条目的关联
+ * 双向一起带出；关键词覆盖不到的再按相近兜底。opts.filter 只约束关键词
+ * 命中（带出的关联不受限，和记忆库页行为一致）。关键词命中按权重高在前，
+ * 归档条目照常可搜（检索是捞回通道，遗忘只挡注入不挡检索）。
+ */
+export function searchEntries(
+  entries: MemoryEntry[],
+  query: string,
+  opts: { filter?: (e: MemoryEntry) => boolean; maxSimilar?: number } = {}
+): EntrySearchHit[] {
+  const q = query.trim().toLowerCase();
+  if (!q) return [];
+  const { filter, maxSimilar = 5 } = opts;
+  const keyword = entries.filter(
+    (e) =>
+      (e.text.toLowerCase().includes(q) || e.id.toLowerCase().includes(q)) &&
+      (!filter || filter(e))
+  );
+  keyword.sort((a, b) => (b.weight ?? 50) - (a.weight ?? 50));
+  const hitIds = new Set(keyword.map((e) => e.id));
+  const related: MemoryEntry[] = [];
+  for (const e of entries) {
+    if (hitIds.has(e.id)) continue;
+    const linked =
+      e.relations.some((r) => hitIds.has(r.to)) ||
+      keyword.some((h) => h.relations.some((r) => r.to === e.id));
+    if (linked) related.push(e);
+  }
+  const excluded = new Set([...hitIds, ...related.map((e) => e.id)]);
+  const similar = searchSimilar(entries, query, excluded, { limit: maxSimilar });
+  const byId = new Map(entries.map((e) => [e.id, e]));
+  return [
+    ...keyword.map((entry) => ({ entry, match: "keyword" as const })),
+    ...related.map((entry) => ({ entry, match: "related" as const })),
+    ...similar.map((h) => ({ entry: byId.get(h.id)!, match: "similar" as const })),
+  ];
+}
+
 // ── AI 整理提示词：把导出 md 交给外部 AI 调标签、提关联，改完导回 ────
 
 export function buildRefinePrompt(exportedMd: string): string {

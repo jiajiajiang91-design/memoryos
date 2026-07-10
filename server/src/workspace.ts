@@ -10,7 +10,14 @@ import {
   compareSessionsDesc,
   extractLatestCompactContext,
 } from "../../src/lib/sessionParse";
-import { fromJsonl, buildInjectionFromEntries, mergeLibsForInjection } from "../../src/lib/entry";
+import {
+  fromJsonl,
+  buildInjectionFromEntries,
+  mergeLibsForInjection,
+  searchEntries,
+  KIND_LABELS,
+  SOURCE_LABELS,
+} from "../../src/lib/entry";
 import type { Session } from "../../src/types";
 
 export type ProjectListEntry = {
@@ -172,4 +179,77 @@ export async function getProjectMemory(
     latestCompactContext,
     projectName: match.name,
   };
+}
+
+// ── search_memory：AI 会话中途按需拉取记忆（只读）─────────────────
+// 开场注入是"推"（按权重挑 1200 字），这个是"拉"：注入装不下的、归档的
+// 都能捞。检索逻辑与 app 记忆库页共用 searchEntries（关键词+关联带出+相近兜底）。
+
+export type MemorySearchHit = {
+  /** 命中在哪个库：项目名 / 全局库 / 技能库。 */
+  lib: string;
+  id: string;
+  text: string;
+  /** 中文类型标签，AI 直接可读。 */
+  kinds: string[];
+  source: string;
+  /** keyword 直接命中；related 关联带出；similar 换说法相近。 */
+  match: "keyword" | "related" | "similar";
+  /** 已归档条目照常可搜，标出来让 AI 知道这是旧账。 */
+  archived?: string;
+  /** 这条关联到的其他条目正文，最多带 3 条。 */
+  relatedTexts?: string[];
+};
+
+const TOTAL_HIT_CAP = 24;
+
+/**
+ * 跨库检索记忆条目。传 projectQuery 搜该项目库+全局库+技能库；
+ * 不传搜全部项目库+全局库+技能库。projectQuery 匹配不到返回 null（同 getProjectMemory）。
+ */
+export async function searchMemory(
+  workspace: string,
+  query: string,
+  projectQuery?: string
+): Promise<{ query: string; hits: MemorySearchHit[]; capped: boolean } | null> {
+  const projects = await listProjects(workspace);
+  let searchProjects = projects;
+  if (projectQuery?.trim()) {
+    const match = matchProject(projects, projectQuery);
+    if (!match) return null;
+    searchProjects = [match];
+  }
+  const libs: { label: string; file: string }[] = [
+    ...searchProjects.map((p) => ({
+      label: p.name,
+      file: path.join(workspace, "projects", p.slug, "entries.jsonl"),
+    })),
+    { label: "全局库", file: path.join(workspace, "entries", "global.jsonl") },
+    { label: "技能库", file: path.join(workspace, "entries", "skill.jsonl") },
+  ];
+  const hits: MemorySearchHit[] = [];
+  for (const lib of libs) {
+    const { entries } = fromJsonl(await readTextSafe(lib.file));
+    if (!entries.length) continue;
+    const byId = new Map(entries.map((e) => [e.id, e]));
+    for (const h of searchEntries(entries, query, { maxSimilar: 3 })) {
+      const e = h.entry;
+      const relatedTexts = e.relations
+        .slice(0, 3)
+        .map((r) => byId.get(r.to)?.text)
+        .filter((t): t is string => !!t);
+      hits.push({
+        lib: lib.label,
+        id: e.id,
+        text: e.text,
+        kinds: e.kinds.map((k) => KIND_LABELS[k] ?? k),
+        source: SOURCE_LABELS[e.source] ?? e.source,
+        match: h.match,
+        ...(e.archived ? { archived: `已归档(${e.archived.at})` } : {}),
+        ...(relatedTexts.length ? { relatedTexts } : {}),
+      });
+    }
+  }
+  const capped = hits.length > TOTAL_HIT_CAP;
+  return { query, hits: hits.slice(0, TOTAL_HIT_CAP), capped };
 }

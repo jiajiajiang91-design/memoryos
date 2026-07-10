@@ -13,7 +13,7 @@ import * as os from "node:os";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { createServer } from "./server";
-import { listProjects, getProjectMemory, matchProject } from "./workspace";
+import { listProjects, getProjectMemory, matchProject, searchMemory } from "./workspace";
 import { assertWithinWorkspace } from "./inbox";
 import { extractLatestCompactContext } from "../../src/lib/sessionParse";
 import { inboxItemToReviewState, inboxHandoffToMarkdown } from "../../src/lib/inbox";
@@ -90,6 +90,26 @@ fs.writeFileSync(path.join(projDir, "sessions", "session_2026-06-01_1030.md"), N
 // 干扰文件：非 session 的 README 应被忽略
 fs.writeFileSync(path.join(projDir, "sessions", "README.md"), "# not a session\n");
 
+// 条目库 fixture：search_memory 用。项目库两条现行带关联 + 一条归档，技能库一条。
+const entry = (id: string, text: string, kinds: string[], extra: Record<string, unknown> = {}) =>
+  JSON.stringify({
+    id, text, kinds, scopes: ["demo-proj"], source: "user", modality: "text",
+    relations: [], createdAt: "2026-07-01", updatedAt: "2026-07-01", ...extra,
+  });
+fs.writeFileSync(
+  path.join(projDir, "entries.jsonl"),
+  [
+    entry("m-0001", "决定用克莱因蓝做主色", ["decision"], { relations: [{ to: "m-0002", rel: "related" }] }),
+    entry("m-0002", "配色定稿后不再反复改", ["constraint"]),
+    entry("m-0003", "旧的导航方案已废弃", ["fact"], { archived: { reason: "manual", at: "2026-07-01" } }),
+  ].join("\n") + "\n"
+);
+fs.mkdirSync(path.join(ws, "entries"), { recursive: true });
+fs.writeFileSync(
+  path.join(ws, "entries", "skill.jsonl"),
+  entry("m-0001", "写周报的固定套路先列结论", ["skill"]).replace('"demo-proj"', '"skill"') + "\n"
+);
+
 // 埋点写到临时目录，便于断言（覆盖 appData 推断）。telemetry / mcp_state 都不许进 workspace 正式区。
 const telemetryDir = fs.mkdtempSync(path.join(os.tmpdir(), "memoryos-telemetry-"));
 process.env.MEMORYOS_TELEMETRY_DIR = telemetryDir;
@@ -146,6 +166,23 @@ async function run() {
   ok(matchProject(projects, "不存在的项目xyz") === null, "匹配不到返回 null");
   ok((await getProjectMemory(ws, "nope")) === null, "get_project_memory 匹配不到返回 null");
 
+  console.log("\n[B2] search_memory 纯函数：拉取通道（推之外的拉）");
+  const sm = await searchMemory(ws, "克莱因蓝", "demo");
+  ok(sm !== null, "search_memory 项目容错匹配命中");
+  const kw = sm!.hits.filter((h) => h.match === "keyword");
+  eq(kw.map((h) => h.id), ["m-0001"], "关键词命中");
+  eq(kw[0].lib, "Demo 项目", "命中标注所在库");
+  eq(kw[0].kinds, ["决策"], "类型输出中文标签");
+  eq(kw[0].relatedTexts, ["配色定稿后不再反复改"], "命中条目带关联正文");
+  ok(sm!.hits.some((h) => h.id === "m-0002" && h.match === "related"), "关联条目一起带出");
+  const smArch = await searchMemory(ws, "导航方案");
+  ok(smArch!.hits.some((h) => h.id === "m-0003" && !!h.archived), "已归档条目搜得到且标注归档");
+  const smSkill = await searchMemory(ws, "周报");
+  ok(smSkill!.hits.some((h) => h.lib === "技能库"), "不传项目时技能库也在检索范围");
+  ok((await searchMemory(ws, "克莱因蓝", "无此项目zzz")) === null, "项目匹配不到返回 null");
+  const smNone = await searchMemory(ws, "完全不存在的词xyzq");
+  eq(smNone!.hits, [], "搜不到返回空命中不报错");
+
   console.log("\n[C] MCP 协议端到端（in-memory Client ↔ server）");
   const [clientT, serverT] = InMemoryTransport.createLinkedPair();
   const server = createServer(ws);
@@ -157,8 +194,8 @@ async function run() {
   const toolNames = toolList.tools.map((t) => t.name).sort();
   eq(
     toolNames,
-    ["get_project_memory", "list_projects", "save_session_handoff"],
-    "listTools 暴露 3 个工具（含 save_session_handoff）"
+    ["get_project_memory", "list_projects", "save_session_handoff", "search_memory"],
+    "listTools 暴露 4 个工具（含 search_memory）"
   );
 
   const lp = await client.callTool({ name: "list_projects", arguments: {} });
@@ -170,6 +207,15 @@ async function run() {
   const gp = await client.callTool({ name: "get_project_memory", arguments: { project: "demo" } });
   const gpStruct = (gp as any).structuredContent;
   eq(gpStruct, mem, "callTool(get_project_memory).structuredContent 与纯函数一致（容错匹配 'demo'）");
+
+  const sr = await client.callTool({ name: "search_memory", arguments: { query: "克莱因蓝", project: "demo" } });
+  const srStruct = (sr as any).structuredContent;
+  eq(srStruct, sm, "callTool(search_memory).structuredContent 与纯函数一致");
+  const srMiss = await client.callTool({ name: "search_memory", arguments: { query: "x", project: "无此项目zzz" } });
+  ok((srMiss as any).isError === true, "search_memory 项目未命中 → isError=true");
+  const srNone = await client.callTool({ name: "search_memory", arguments: { query: "完全不存在的词xyzq" } });
+  ok(String((srNone as any).content[0].text).includes("没有找到"), "search_memory 无命中返回可读提示非报错");
+  ok((srNone as any).isError !== true, "search_memory 无命中不算错误");
 
   const miss = await client.callTool({ name: "get_project_memory", arguments: { project: "无此项目zzz" } });
   ok((miss as any).isError === true, "get_project_memory 未命中 → isError=true");
