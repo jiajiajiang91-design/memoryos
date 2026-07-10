@@ -508,6 +508,51 @@ export function mergeProposals(
   return out;
 }
 
+// ── 相近检索：关键词搜不到的换个说法也能找到（本地相似度，不联网）────
+// 语义检索的第一版：查询和正文都切成二字字对，查询字对出现在正文里的
+// 占比即相似度。机械但可解释，真语义要嵌入模型，以后再说。
+
+/** 文本切成二字字对集合，去空白、统一小写。太短返回空集。 */
+function textBigrams(text: string): Set<string> {
+  const s = text.replace(/\s+/g, "").toLowerCase();
+  const out = new Set<string>();
+  for (let i = 0; i + 2 <= s.length; i++) out.add(s.slice(i, i + 2));
+  return out;
+}
+
+/** 查询对正文的包含度：查询字对有多大比例出现在正文里，0 到 1。 */
+export function similarityScore(query: string, text: string): number {
+  const q = textBigrams(query);
+  if (!q.size) return 0;
+  const t = textBigrams(text);
+  let shared = 0;
+  for (const b of q) if (t.has(b)) shared++;
+  return shared / q.size;
+}
+
+export type SimilarHit = { id: string; score: number };
+
+/**
+ * 按相似度找相近条目，排除已被关键词直接命中的（excludeIds），
+ * 高分在前，只出超过阈值的，最多 limit 条。
+ */
+export function searchSimilar(
+  entries: MemoryEntry[],
+  query: string,
+  excludeIds: Set<string>,
+  opts: { limit?: number; minScore?: number } = {}
+): SimilarHit[] {
+  const { limit = 5, minScore = 0.25 } = opts;
+  const hits: SimilarHit[] = [];
+  for (const e of entries) {
+    if (excludeIds.has(e.id)) continue;
+    const score = similarityScore(query, e.text);
+    if (score >= minScore) hits.push({ id: e.id, score });
+  }
+  hits.sort((a, b) => b.score - a.score || (a.id < b.id ? -1 : 1));
+  return hits.slice(0, limit);
+}
+
 // ── AI 整理提示词：把导出 md 交给外部 AI 调标签、提关联，改完导回 ────
 
 export function buildRefinePrompt(exportedMd: string): string {

@@ -13,6 +13,7 @@ import {
   SOURCE_LABELS,
   groupByKind,
   buildInjectionFromEntries,
+  searchSimilar,
   type MemoryEntry,
   type EntryKind,
   type RelationProposal,
@@ -143,6 +144,12 @@ export default function EntryLibraryPage(props: Props) {
     }
     return props.entries.filter((e) => pulled.has(e.id));
   }, [props.entries, query, fKind, fSource, fTier]);
+  // 相近检索：关键词没搜到的换个说法也能找到。已直接命中（含带出的关联）不重复出
+  const similar = useMemo(() => {
+    const q = query.trim();
+    if (!q) return [];
+    return searchSimilar(props.entries, q, new Set(filtered.map((e) => e.id)));
+  }, [props.entries, query, filtered]);
   // 现行层进八类分组；已归档单独一区，捞回即回现行层
   const active = useMemo(() => filtered.filter((e) => !e.archived), [filtered]);
   const archivedList = useMemo(() => filtered.filter((e) => e.archived), [filtered]);
@@ -390,8 +397,30 @@ export default function EntryLibraryPage(props: Props) {
                 </button>
               </div>
             )}
-            {filtered.length === 0 && query.trim() && (
+            {filtered.length === 0 && query.trim() && similar.length === 0 && (
               <p className="text-[14px] text-ink-faint text-center py-10">{t("entryLib.searchNoHit")}</p>
+            )}
+            {similar.length > 0 && (
+              <div className="px-4 py-3 rounded-xl border border-hairline bg-surface-soft">
+                <p className="text-[12px] text-ink-faint mb-2">
+                  {filtered.length === 0 ? t("entryLib.similarOnly") : t("entryLib.similarAlso")}
+                </p>
+                <div className="flex flex-wrap gap-1.5">
+                  {similar.map((h) => {
+                    const e = props.entries.find((x) => x.id === h.id)!;
+                    return (
+                      <button
+                        key={`sim-${e.scopes[0] ?? ""}-${h.id}`}
+                        onClick={() => setQuery(h.id)}
+                        title={e.text}
+                        className="px-2.5 py-1 rounded-full text-[12px] border border-hairline text-ink-soft hover:text-ink hover:border-slate/40 transition-colors"
+                      >
+                        {e.text.length > 20 ? e.text.slice(0, 20) + "…" : e.text}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
             )}
             {ALL_KINDS.map((k) =>
               grouped[k].length === 0 ? null : (

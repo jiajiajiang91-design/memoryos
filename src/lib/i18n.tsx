@@ -347,6 +347,8 @@ const DICT: Record<string, Entry> = {
   "entryLib.filterSource": { zh: "来源", en: "Source" },
   "entryLib.filterTier": { zh: "权重", en: "Weight" },
   "entryLib.searchNoHit": { zh: "没有匹配的记忆", en: "No matching entries" },
+  "entryLib.similarOnly": { zh: "没有直接命中，这些记忆和你搜的相近，点一下打开", en: "No direct match. These are close to your search — click to open" },
+  "entryLib.similarAlso": { zh: "相近的记忆还有这些，点一下打开", en: "Also close to your search — click to open" },
   "entryLib.relations": { zh: "关联 {n}", en: "{n} linked" },
   "entryLib.graphView": { zh: "星图", en: "Graph" },
   "entryLib.graphEmpty": { zh: "还没有关联。在条目的编辑标签里加关联，或用复制给 AI 整理让 AI 提", en: "No relations yet. Add them in a memory's tag editor, or let an AI suggest them via the tidy-up prompt" },

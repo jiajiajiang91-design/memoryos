@@ -20,6 +20,8 @@ import {
   relPairKey,
   skillCandidates,
   mergeLibsForInjection,
+  similarityScore,
+  searchSimilar,
   migrateCardsToEntries,
   toJsonl,
   fromJsonl,
@@ -354,6 +356,28 @@ console.log("\n[R] 星图视口数学（拖拽缩放）");
   const z3 = zoomViewBox(v0, 1.5, c.x, c.y, 190, 2280);
   const c2 = clientPointToWorld(z3, rect, 290, 190);
   ok(Math.abs(c2.x - c.x) < 1e-9 && Math.abs(c2.y - c.y) < 1e-9, "缩放后同一屏幕点仍指向不动点");
+}
+
+console.log("\n[S] 相近检索（本地相似度）");
+{
+  const t1 = mk({ id: "m-0801", text: "界面配色用克莱因蓝做主色", kinds: ["decision"] });
+  const t2 = mk({ id: "m-0802", text: "主色确定为克莱因蓝，辅助色留白", kinds: ["fact"] });
+  const t3 = mk({ id: "m-0803", text: "导出导入按编号对账", kinds: ["fact"] });
+  eq(similarityScore("克莱因蓝", "主色确定为克莱因蓝"), 1, "查询完整出现在正文里满分");
+  eq(similarityScore("克莱因蓝", "毫不相干的内容"), 0, "毫不相干零分");
+  ok(similarityScore("配色主色", t2.text) > 0.25, "换了说法仍过阈值");
+  eq(similarityScore("", "任意正文"), 0, "空查询零分");
+  eq(similarityScore("蓝", "克莱因蓝"), 0, "单字查询切不出字对不参与");
+  // 排除已直接命中的，剩下按分排序
+  const sim1 = searchSimilar([t1, t2, t3], "克莱因蓝主色", new Set(["m-0801"]));
+  eq(sim1.map((h) => h.id), ["m-0802"], "排除命中者，相近的入选，无关的不入");
+  ok(sim1[0].score > 0.5, "相近分数过半");
+  // limit 生效
+  const many = [t1, t2, t3, mk({ id: "m-0804", text: "克莱因蓝按钮悬停变深" })];
+  eq(searchSimilar(many, "克莱因蓝", new Set(), { limit: 2 }).length, 2, "最多出 limit 条");
+  // 高分在前
+  const ranked = searchSimilar([t3, t2], "主色克莱因蓝", new Set());
+  eq(ranked[0]?.id, "m-0802", "高分在前");
 }
 
 console.log(`\n结果：${pass} passed, ${fail} failed\n`);
