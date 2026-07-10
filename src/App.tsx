@@ -67,6 +67,7 @@ import { stampCards, adoptSuggestionsIntoCards } from "./lib/cards";
 import { normalizeSourceTool } from "./lib/sourceTools";
 import { parsedToInboxHandoff, inboxItemToReviewState } from "./lib/inbox";
 import { logEvent } from "./lib/telemetry";
+import { scoreEntryAt } from "./lib/weight";
 import type { Project, ProjectMeta, ParsedHandoff, UpdateSuggestion, InboxItem, McpState } from "./types";
 import Sidebar from "./components/Sidebar";
 import Dashboard from "./components/Dashboard";
@@ -1057,8 +1058,12 @@ export default function App() {
               // 回落规则以项目库为准；有条目时再拼上技能库，合并按权重挑（07-10 确认）
               if (activeEntries.length) {
                 const skillLib = await readEntriesLib(workspace, { kind: "skill" });
+                // 挑选尺子 = 界面档位同款合成分（所见档位 = 注入排序）
+                const now = Date.now();
                 const inj = buildInjectionFromEntries(
-                  mergeLibsForInjection(activeEntries, skillLib.entries)
+                  mergeLibsForInjection(activeEntries, skillLib.entries),
+                  undefined,
+                  (e) => scoreEntryAt(e, now)
                 );
                 cards = `# 记忆条目 · ${project.name}\n\n${inj.text}`;
                 archiveHint = false;

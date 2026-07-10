@@ -32,6 +32,7 @@ import {
   type EntryKind,
 } from "../src/lib/entry";
 import { zoomViewBox, panViewBox, clientDeltaToWorld, clientPointToWorld } from "../src/lib/graph";
+import { scoreEntryAt } from "../src/lib/weight";
 
 let pass = 0;
 let fail = 0;
@@ -408,6 +409,29 @@ console.log("\n[T] 统一检索入口 searchEntries（人和 AI 同一条路）"
   const arch = searchEntries([{ ...k2, archived: { reason: "manual", at: "2026-07-10" } }], "克莱因蓝");
   eq(arch[0]?.entry.id, "m-0902", "已归档条目照常搜到");
   eq(searchEntries([k1, k2], ""), [], "空查询返回空");
+}
+
+console.log("\n[U] 注入挑选用合成分（所见档位 = 注入排序）");
+{
+  const NOW = new Date("2026-07-10").getTime();
+  // 都没手动调过档：新鲜的用户决策 vs 过期的三方未核实状态
+  const freshUser = mk({ id: "m-1001", text: "新鲜的用户决策条目", kinds: ["decision"], source: "user", updatedAt: "2026-07-08" });
+  const staleThird = mk({ id: "m-1002", text: "过期的三方未核实状态", kinds: ["state"], source: "third_party", truthiness: "unverified", updatedAt: "2026-01-01" });
+  const sFresh = scoreEntryAt(freshUser, NOW);
+  const sStale = scoreEntryAt(staleThird, NOW);
+  ok(sFresh > sStale, `合成分区分新鲜用户决策(${Math.round(sFresh)})和过期三方状态(${Math.round(sStale)})`);
+  // 原始 weight 字段两条都没有 → 旧尺子下同分 50，新尺子下新鲜的赢。
+  // 预算 15 只装得下一条（决策行 4+10=14，状态行 4+12=16）
+  const tight = buildInjectionFromEntries([staleThird, freshUser], 15, (e) => scoreEntryAt(e, NOW));
+  eq(tight.includedIds, ["m-1001"], "预算紧时合成分高的入选");
+  eq(tight.droppedIds, ["m-1002"], "合成分低的舍弃");
+  // 手动分仍然压过合成：同类型同区块里手动 95 的排前
+  const manual = buildInjectionFromEntries(
+    [{ ...staleThird, kinds: ["decision" as const], weight: 95 }, freshUser],
+    16,
+    (e) => scoreEntryAt(e, NOW)
+  );
+  eq(manual.includedIds, ["m-1002"], "手动调过档的仍然优先");
 }
 
 console.log(`\n结果：${pass} passed, ${fail} failed\n`);

@@ -287,12 +287,16 @@ export type InjectionResult = {
 };
 
 /**
- * 把条目拼成给 AI 的注入文本。类型分区块，区块内按权重从高到低，
- * 权重缺省按 50 算；超预算的条目舍弃并记录。纯函数，不碰真实注入链路。
+ * 把条目拼成给 AI 的注入文本。类型分区块，区块内按分从高到低，
+ * 超预算的条目舍弃并记录。纯函数，不碰真实注入链路。
+ * scoreOf 是挑选用的尺子：生产调用方一律传 weight.ts 的 scoreEntryAt
+ * （手动分优先，否则新鲜度+来源确定性合成，和界面档位徽章同一把尺），
+ * 缺省退回原始 weight 字段仅供测试。
  */
 export function buildInjectionFromEntries(
   entries: MemoryEntry[],
-  budget = INJECTION_BUDGET_CHARS
+  budget = INJECTION_BUDGET_CHARS,
+  scoreOf: (e: MemoryEntry) => number = (e) => e.weight ?? 50
 ): InjectionResult {
   // 已归档的不进注入：遗忘等于归档，现行层才是给 AI 的。
   entries = entries.filter((e) => !e.archived);
@@ -300,10 +304,10 @@ export function buildInjectionFromEntries(
   // 让相关的记忆倾向一起入选，而不是各排各的。
   const boosted = new Set<string>();
   for (const e of entries) {
-    if ((e.weight ?? 50) >= 67) for (const r of e.relations) boosted.add(r.to);
+    if (scoreOf(e) >= 67) for (const r of e.relations) boosted.add(r.to);
   }
   const w = (e: MemoryEntry) =>
-    Math.min(100, (e.weight ?? 50) + (boosted.has(e.id) ? 15 : 0));
+    Math.min(100, scoreOf(e) + (boosted.has(e.id) ? 15 : 0));
   const grouped = {} as Record<EntryKind, MemoryEntry[]>;
   for (const k of ALL_KINDS) grouped[k] = [];
   for (const e of entries) grouped[kindsOf(e)[0]].push(e);

@@ -202,6 +202,26 @@ export function scoreEntry(
   });
 }
 
+/**
+ * 条目级合成分（带时间）：距最后更新天数由传入的当前毫秒算出。
+ * 界面档位徽章和注入挑选共用这一把尺子（所见档位 = 注入排序）。
+ */
+export function scoreEntryAt(
+  e: {
+    kinds: string[];
+    source: string;
+    truthiness?: "verified" | "unverified";
+    weight?: number;
+    updatedAt?: string;
+    createdAt?: string;
+  },
+  nowMs: number
+): number {
+  const ts = new Date(e.updatedAt || e.createdAt || "").getTime();
+  const days = Number.isFinite(ts) ? Math.max(0, Math.floor((nowMs - ts) / 86400000)) : 0;
+  return scoreEntry(e, days);
+}
+
 /** 确定性：来源类型映射（点40 三方默认低，真实性校验后可由调用方调高）。 */
 export function certaintyFromSource(source: SourceKind): number {
   switch (source) {

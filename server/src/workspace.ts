@@ -18,6 +18,7 @@ import {
   KIND_LABELS,
   SOURCE_LABELS,
 } from "../../src/lib/entry";
+import { scoreEntryAt } from "../../src/lib/weight";
 import type { Session } from "../../src/types";
 
 export type ProjectListEntry = {
@@ -147,8 +148,12 @@ export async function getProjectMemory(
         const skillLib = fromJsonl(
           await readTextSafe(path.join(workspace, "entries", "skill.jsonl"))
         );
+        // 挑选尺子 = app 界面档位同款合成分，两条注入路径同一把尺
+        const now = Date.now();
         const inj = buildInjectionFromEntries(
-          mergeLibsForInjection(active, skillLib.entries)
+          mergeLibsForInjection(active, skillLib.entries),
+          undefined,
+          (e) => scoreEntryAt(e, now)
         );
         cards = `# 记忆条目 · ${match.name}\n\n${inj.text}`;
       }
@@ -197,6 +202,8 @@ export type MemorySearchHit = {
   match: "keyword" | "related" | "similar";
   /** 已归档条目照常可搜，标出来让 AI 知道这是旧账。 */
   archived?: string;
+  /** 三方来源的真实性：已核实/未核实，AI 引用时该有的保留。 */
+  truthiness?: string;
   /** 这条关联到的其他条目正文，最多带 3 条。 */
   relatedTexts?: string[];
 };
@@ -246,6 +253,9 @@ export async function searchMemory(
         source: SOURCE_LABELS[e.source] ?? e.source,
         match: h.match,
         ...(e.archived ? { archived: `已归档(${e.archived.at})` } : {}),
+        ...(e.source === "third_party"
+          ? { truthiness: e.truthiness === "verified" ? "已核实" : "未核实" }
+          : {}),
         ...(relatedTexts.length ? { relatedTexts } : {}),
       });
     }

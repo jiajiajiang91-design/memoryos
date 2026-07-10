@@ -6,7 +6,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ArrowLeft, Bot, User, Sparkles, LayoutGrid, Upload, Download, Search, Link2, Pin, Archive, Undo2, Pencil, Share2, Plus, FolderInput, Maximize2 } from "lucide-react";
 import { zoomViewBox, panViewBox, clientDeltaToWorld, clientPointToWorld, type ViewBox } from "../lib/graph";
-import { toTier, scoreEntry, THRESHOLDS, type Tier } from "../lib/weight";
+import { toTier, scoreEntry, scoreEntryAt, THRESHOLDS, type Tier } from "../lib/weight";
 import {
   ALL_KINDS,
   KIND_LABELS,
@@ -143,7 +143,11 @@ export default function EntryLibraryPage(props: Props) {
   const active = useMemo(() => filtered.filter((e) => !e.archived), [filtered]);
   const archivedList = useMemo(() => filtered.filter((e) => e.archived), [filtered]);
   const grouped = useMemo(() => groupByKind(active), [active]);
-  const injection = useMemo(() => buildInjectionFromEntries(props.entries), [props.entries]);
+  // AI 视图预览的挑选尺子和真实注入一致（scoreEntryAt），所见即所注
+  const injection = useMemo(() => {
+    const now = Date.now();
+    return buildInjectionFromEntries(props.entries, undefined, (e) => scoreEntryAt(e, now));
+  }, [props.entries]);
   // 全部 = 跨库只读回顾：三库编号各自独立会撞号，合并视图不提供编辑
   const readOnly = props.libKind === "all";
   const effectiveView = readOnly ? "user" : view;
