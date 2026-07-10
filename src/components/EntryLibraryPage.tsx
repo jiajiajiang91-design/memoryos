@@ -3,8 +3,9 @@
 // 给 AI 看：注入预览，按权重挑条目、1200 字内。当前为预览，正式开场仍用记忆卡片，
 // 切换真实注入链路等六卡迁移完成后再做（设计稿第 9 节 S5 之后）。
 
-import { useMemo, useState } from "react";
-import { ArrowLeft, Bot, User, Sparkles, LayoutGrid, Upload, Download, Search, Link2, Pin, Archive, Undo2, Pencil, Share2, Plus, FolderInput } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { ArrowLeft, Bot, User, Sparkles, LayoutGrid, Upload, Download, Search, Link2, Pin, Archive, Undo2, Pencil, Share2, Plus, FolderInput, Maximize2 } from "lucide-react";
+import { zoomViewBox, panViewBox, clientDeltaToWorld, clientPointToWorld, type ViewBox } from "../lib/graph";
 import { toTier, scoreEntry, THRESHOLDS, type Tier } from "../lib/weight";
 import {
   ALL_KINDS,
@@ -819,6 +820,68 @@ function GraphView(props: {
     return p;
   }, [nodes, edges]);
 
+  // ── 交互（拖拽缩放）：滚轮缩放、拖背景平移、拖节点重摆、一键复位 ────
+  const svgRef = useRef<SVGSVGElement>(null);
+  const [view, setView] = useState<ViewBox>({ x: 0, y: 0, w: W, h: H });
+  // 手动摆过的节点位置，优先于力导向结果；复位清空
+  const [overrides, setOverrides] = useState<Map<string, { x: number; y: number }>>(new Map());
+  const posOf = (id: string) => overrides.get(id) ?? pos.get(id)!;
+  const viewRef = useRef(view);
+  viewRef.current = view;
+  const drag = useRef<
+    | { kind: "pan"; lastX: number; lastY: number }
+    | { kind: "node"; id: string; lastX: number; lastY: number }
+    | null
+  >(null);
+
+  // 滚轮缩放要 preventDefault 挡住页面滚动，React 的 onWheel 是被动监听挡不住，原生挂
+  useEffect(() => {
+    const el = svgRef.current;
+    if (!el) return;
+    const onWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      const rect = el.getBoundingClientRect();
+      const c = clientPointToWorld(viewRef.current, rect, e.clientX, e.clientY);
+      const factor = e.deltaY < 0 ? 1.15 : 1 / 1.15;
+      setView((v) => zoomViewBox(v, factor, c.x, c.y, W / 4, W * 3));
+    };
+    el.addEventListener("wheel", onWheel, { passive: false });
+    return () => el.removeEventListener("wheel", onWheel);
+  }, []);
+
+  const onPointerDown = (e: React.PointerEvent<SVGSVGElement>) => {
+    drag.current = { kind: "pan", lastX: e.clientX, lastY: e.clientY };
+    e.currentTarget.setPointerCapture(e.pointerId);
+  };
+  const startNodeDrag = (id: string) => (e: React.PointerEvent) => {
+    e.stopPropagation();
+    drag.current = { kind: "node", id, lastX: e.clientX, lastY: e.clientY };
+    svgRef.current?.setPointerCapture(e.pointerId);
+  };
+  const onPointerMove = (e: React.PointerEvent<SVGSVGElement>) => {
+    const d = drag.current;
+    if (!d) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    const { dx, dy } = clientDeltaToWorld(view, rect.width, e.clientX - d.lastX, e.clientY - d.lastY);
+    d.lastX = e.clientX;
+    d.lastY = e.clientY;
+    if (d.kind === "pan") {
+      setView((v) => panViewBox(v, -dx, -dy));
+    } else {
+      const p = posOf(d.id);
+      setOverrides((m) => new Map(m).set(d.id, { x: p.x + dx, y: p.y + dy }));
+    }
+  };
+  const endDrag = () => {
+    drag.current = null;
+  };
+  const resetView = () => {
+    setView({ x: 0, y: 0, w: W, h: H });
+    setOverrides(new Map());
+  };
+  const isDefaultView =
+    view.x === 0 && view.y === 0 && view.w === W && overrides.size === 0;
+
   if (edges.length === 0) {
     return (
       <div className="max-w-[640px] mx-auto mt-10">
@@ -872,6 +935,15 @@ function GraphView(props: {
       )}
       <div className="flex items-center gap-3 mb-3">
         <p className="text-[13px] text-ink-faint flex-1">{t("entryLib.graphHint")}</p>
+        {!isDefaultView && (
+          <button
+            onClick={resetView}
+            title={t("entryLib.graphResetHint")}
+            className="h-8 px-3 rounded-lg border border-hairline text-[12px] text-ink-soft inline-flex items-center gap-1.5 hover:text-ink hover:border-slate/40 transition-colors"
+          >
+            <Maximize2 size={12} strokeWidth={1.5} /> {t("entryLib.graphReset")}
+          </button>
+        )}
         {!props.readOnly && (
           <button
             onClick={props.onAutoRelate}
@@ -882,10 +954,19 @@ function GraphView(props: {
           </button>
         )}
       </div>
-      <svg viewBox={`0 0 ${W} ${H}`} className="w-full rounded-xl border border-hairline bg-surface-soft">
+      <svg
+        ref={svgRef}
+        viewBox={`${view.x} ${view.y} ${view.w} ${view.h}`}
+        className="w-full rounded-xl border border-hairline bg-surface-soft touch-none"
+        style={{ cursor: drag.current?.kind === "pan" ? "grabbing" : "grab" }}
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={endDrag}
+        onPointerCancel={endDrag}
+      >
         {edges.map((ed) => {
-          const a = pos.get(ed.from)!;
-          const b = pos.get(ed.to)!;
+          const a = posOf(ed.from);
+          const b = posOf(ed.to);
           const lit = hoverId ? ed.from === hoverId || ed.to === hoverId : true;
           return (
             <line
@@ -899,7 +980,7 @@ function GraphView(props: {
           );
         })}
         {nodes.map((e) => {
-          const p = pos.get(e.id)!;
+          const p = posOf(e.id);
           const tier = tierOf(e);
           const fill = tier === "high" ? "#002FA7" : tier === "mid" ? "#8A93A8" : "#C6CBD6";
           const deg = degree.get(e.id) ?? 0;
@@ -911,7 +992,8 @@ function GraphView(props: {
               opacity={dim(e.id)}
               onMouseEnter={() => setHoverId(e.id)}
               onMouseLeave={() => setHoverId(null)}
-              style={{ cursor: "default" }}
+              onPointerDown={startNodeDrag(e.id)}
+              style={{ cursor: "move" }}
             >
               <title>{e.text}</title>
               <circle cx={p.x} cy={p.y} r={r} fill={fill} stroke={e.pinned ? "#002FA7" : "none"} strokeWidth={e.pinned ? 2 : 0} />

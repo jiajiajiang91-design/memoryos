@@ -28,6 +28,7 @@ import {
   type MemoryEntry,
   type EntryKind,
 } from "../src/lib/entry";
+import { zoomViewBox, panViewBox, clientDeltaToWorld, clientPointToWorld } from "../src/lib/graph";
 
 let pass = 0;
 let fail = 0;
@@ -324,6 +325,36 @@ ok(mInj.text.includes("## 技能") && mInj.text.includes("技能库第一条"), 
 // 高权重关联加分不串库：项目 m-0001 关联 m-0002，只该加分项目侧那条
 const tight = buildInjectionFromEntries(merged, 26);
 ok(tight.includedIds.includes("m-0001"), "预算紧时高权重项目条目入选");
+
+console.log("\n[R] 星图视口数学（拖拽缩放）");
+{
+  const v0 = { x: 0, y: 0, w: 760, h: 560 };
+  // 以中心为不动点放大 2 倍：视口减半，中心不动
+  const z1 = zoomViewBox(v0, 2, 380, 280, 190, 2280);
+  eq(z1.w, 380, "放大 2 倍视口宽减半");
+  eq(z1.h, 280, "高按比例跟随");
+  ok(Math.abs(z1.x + z1.w / 2 - 380) < 1e-9 && Math.abs(z1.y + z1.h / 2 - 280) < 1e-9, "缩放中心不动");
+  // 不动点在角上：角坐标经缩放后仍指向同一世界点
+  const z2 = zoomViewBox(v0, 2, 0, 0, 190, 2280);
+  eq([z2.x, z2.y], [0, 0], "以原点为不动点缩放原点不动");
+  // 夹在上下限
+  eq(zoomViewBox(v0, 100, 380, 280, 190, 2280).w, 190, "放大夹在最小宽");
+  eq(zoomViewBox(v0, 0.01, 380, 280, 190, 2280).w, 2280, "缩小夹在最大宽");
+  // 平移
+  eq(panViewBox(v0, 10, -5), { x: 10, y: -5, w: 760, h: 560 }, "平移直接加增量");
+  // 像素位移换世界位移：视口 760 渲染成 380px，比例 2
+  eq(clientDeltaToWorld(v0, 380, 10, 6), { dx: 20, dy: 12 }, "像素位移按比例放大");
+  eq(clientDeltaToWorld(v0, 0, 10, 6), { dx: 0, dy: 0 }, "元素宽为零不除零");
+  // 屏幕点换世界点
+  const rect = { left: 100, top: 50, width: 380, height: 280 };
+  eq(clientPointToWorld(v0, rect, 100, 50), { x: 0, y: 0 }, "左上角是视口原点");
+  eq(clientPointToWorld(v0, rect, 480, 330), { x: 760, y: 560 }, "右下角是视口对角");
+  // 缩放后往返一致：先缩放再算同一屏幕点，世界点即缩放不动点
+  const c = clientPointToWorld(v0, rect, 290, 190);
+  const z3 = zoomViewBox(v0, 1.5, c.x, c.y, 190, 2280);
+  const c2 = clientPointToWorld(z3, rect, 290, 190);
+  ok(Math.abs(c2.x - c.x) < 1e-9 && Math.abs(c2.y - c.y) < 1e-9, "缩放后同一屏幕点仍指向不动点");
+}
 
 console.log(`\n结果：${pass} passed, ${fail} failed\n`);
 if (fail > 0) process.exit(1);
