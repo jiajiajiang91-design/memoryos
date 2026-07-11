@@ -204,8 +204,10 @@ export type MemorySearchHit = {
   archived?: string;
   /** 三方来源的真实性：已核实/未核实，AI 引用时该有的保留。 */
   truthiness?: string;
-  /** 这条关联到的其他条目正文，最多带 3 条。 */
+  /** 关联条目正文带关系类型（[相关]/[同会话]/[取代了]），最多 3 条。 */
   relatedTexts?: string[];
+  /** 这条已被更新的条目取代，AI 别把它当现行结论引用。 */
+  supersededBy?: string;
 };
 
 const TOTAL_HIT_CAP = 24;
@@ -245,10 +247,21 @@ export async function searchMemory(
       scoreOf: (e) => scoreEntryAt(e, now),
     })) {
       const e = h.entry;
+      // 关系类型进输出（知识图谱推演起步）：AI 拿到的不只是"有关"，
+      // 还知道是相关、同会话还是取代关系。
+      const relLabel = (rel: string) =>
+        rel === "supersedes" ? "取代了" : rel === "from_same_session" ? "同会话" : "相关";
       const relatedTexts = e.relations
         .slice(0, 3)
-        .map((r) => byId.get(r.to)?.text)
+        .map((r) => {
+          const t = byId.get(r.to)?.text;
+          return t ? `[${relLabel(r.rel)}] ${t}` : undefined;
+        })
         .filter((t): t is string => !!t);
+      // 被取代的旧账明示取代者，防 AI 引旧结论
+      const sup = entries.find((o) =>
+        o.relations.some((r) => r.to === e.id && r.rel === "supersedes")
+      );
       hits.push({
         lib: lib.label,
         id: e.id,
@@ -261,6 +274,7 @@ export async function searchMemory(
           ? { truthiness: e.truthiness === "verified" ? "已核实" : "未核实" }
           : {}),
         ...(relatedTexts.length ? { relatedTexts } : {}),
+        ...(sup ? { supersededBy: `已被 ${sup.id} 取代：${sup.text}` } : {}),
       });
     }
   }

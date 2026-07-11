@@ -99,7 +99,9 @@ const entry = (id: string, text: string, kinds: string[], extra: Record<string, 
 fs.writeFileSync(
   path.join(projDir, "entries.jsonl"),
   [
-    entry("m-0001", "决定用克莱因蓝做主色", ["decision"], { relations: [{ to: "m-0002", rel: "related" }] }),
+    entry("m-0001", "决定用克莱因蓝做主色", ["decision"], {
+      relations: [{ to: "m-0002", rel: "related" }, { to: "m-0003", rel: "supersedes" }],
+    }),
     entry("m-0002", "配色定稿后不再反复改", ["constraint"]),
     entry("m-0003", "旧的导航方案已废弃", ["fact"], { archived: { reason: "manual", at: "2026-07-01" } }),
   ].join("\n") + "\n"
@@ -173,10 +175,16 @@ async function run() {
   eq(kw.map((h) => h.id), ["m-0001"], "关键词命中");
   eq(kw[0].lib, "Demo 项目", "命中标注所在库");
   eq(kw[0].kinds, ["决策"], "类型输出中文标签");
-  eq(kw[0].relatedTexts, ["配色定稿后不再反复改"], "命中条目带关联正文");
+  eq(
+    kw[0].relatedTexts,
+    ["[相关] 配色定稿后不再反复改", "[取代了] 旧的导航方案已废弃"],
+    "命中条目带关联正文且标关系类型"
+  );
   ok(sm!.hits.some((h) => h.id === "m-0002" && h.match === "related"), "关联条目一起带出");
   const smArch = await searchMemory(ws, "导航方案");
   ok(smArch!.hits.some((h) => h.id === "m-0003" && !!h.archived), "已归档条目搜得到且标注归档");
+  const arch3 = smArch!.hits.find((h) => h.id === "m-0003")!;
+  eq(arch3.supersededBy, "已被 m-0001 取代：决定用克莱因蓝做主色", "被取代的旧账明示取代者");
   const smSkill = await searchMemory(ws, "周报");
   ok(smSkill!.hits.some((h) => h.lib === "技能库"), "不传项目时技能库也在检索范围");
   ok((await searchMemory(ws, "克莱因蓝", "无此项目zzz")) === null, "项目匹配不到返回 null");
