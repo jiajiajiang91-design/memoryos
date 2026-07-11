@@ -4,7 +4,7 @@
 // 切换真实注入链路等六卡迁移完成后再做（设计稿第 9 节 S5 之后）。
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ArrowLeft, Bot, User, Sparkles, LayoutGrid, Upload, Download, Search, Link2, Pin, Archive, Undo2, Pencil, Share2, Plus, FolderInput, Maximize2 } from "lucide-react";
+import { ArrowLeft, Bot, User, Sparkles, LayoutGrid, Upload, Download, Search, Link2, Pin, Archive, Undo2, Pencil, Share2, Plus, FolderInput, Maximize2, Layers } from "lucide-react";
 import { zoomViewBox, panViewBox, clientDeltaToWorld, clientPointToWorld, type ViewBox } from "../lib/graph";
 import { toTier, scoreEntry, scoreEntryAt, THRESHOLDS, type Tier } from "../lib/weight";
 import {
@@ -17,6 +17,7 @@ import {
   type MemoryEntry,
   type EntryKind,
   type RelationProposal,
+  type MergeProposal,
 } from "../lib/entry";
 import { useT } from "../lib/i18n";
 
@@ -53,6 +54,11 @@ type Props = {
   onAcceptRelation: (p: RelationProposal) => void;
   onRejectRelation: (p: RelationProposal) => void;
   onAcceptAllRelations: () => void;
+  /** 合并提案（去重）：确认合并保留一条，不是重复防复提。 */
+  pendingMerges: MergeProposal[];
+  onFindDuplicates: () => void;
+  onAcceptMerge: (p: MergeProposal) => void;
+  onRejectMerge: (p: MergeProposal) => void;
   /** 开场注入来源开关：开了用条目库，关了用记忆卡片（07-04 确认）。 */
   entryInjectionOn: boolean;
   onToggleInjection: () => void;
@@ -130,7 +136,8 @@ export default function EntryLibraryPage(props: Props) {
     };
     const q = query.trim();
     if (!q) return { filtered: props.entries.filter(pass), similar: [] as MemoryEntry[] };
-    const hits = searchEntries(props.entries, q, { filter: pass });
+    const now = Date.now();
+    const hits = searchEntries(props.entries, q, { filter: pass, scoreOf: (e) => scoreEntryAt(e, now) });
     const shownIds = new Set(
       hits.filter((h) => h.match !== "similar").map((h) => h.entry.id)
     );
@@ -142,7 +149,13 @@ export default function EntryLibraryPage(props: Props) {
   // 现行层进八类分组；已归档单独一区，捞回即回现行层
   const active = useMemo(() => filtered.filter((e) => !e.archived), [filtered]);
   const archivedList = useMemo(() => filtered.filter((e) => e.archived), [filtered]);
-  const grouped = useMemo(() => groupByKind(active), [active]);
+  // 组内按合成分高在前（接口 F4）：重要的记忆浮在每组顶上，和注入挑选一把尺
+  const grouped = useMemo(() => {
+    const g = groupByKind(active);
+    const now = Date.now();
+    for (const k of ALL_KINDS) g[k] = [...g[k]].sort((a, b) => scoreEntryAt(b, now) - scoreEntryAt(a, now));
+    return g;
+  }, [active]);
   // AI 视图预览的挑选尺子和真实注入一致（scoreEntryAt），所见即所注
   const injection = useMemo(() => {
     const now = Date.now();
@@ -342,6 +355,13 @@ export default function EntryLibraryPage(props: Props) {
                   >
                     <Sparkles size={14} strokeWidth={1.5} /> {t("entryLib.refinePrompt")}
                   </button>
+                  <button
+                    onClick={props.onFindDuplicates}
+                    title={t("entryLib.findDupHint")}
+                    className="h-9 px-3.5 rounded-lg border border-hairline text-[13px] text-ink-soft inline-flex items-center gap-1.5 hover:text-ink hover:border-slate/40 transition-colors"
+                  >
+                    <Layers size={14} strokeWidth={1.5} /> {t("entryLib.findDup")}
+                  </button>
                 </>
               )}
             </div>
@@ -409,6 +429,49 @@ export default function EntryLibraryPage(props: Props) {
                       {e.text.length > 20 ? e.text.slice(0, 20) + "…" : e.text}
                     </button>
                   ))}
+                </div>
+              </div>
+            )}
+            {!readOnly && props.pendingMerges.length > 0 && (
+              <div className="rounded-xl border border-[#EAD9A8] bg-[#FFFBEF]">
+                <div className="px-4 py-2.5 flex items-center gap-3 border-b border-[#EAD9A8]/60">
+                  <span className="text-[13px] font-medium text-[#A37A1C]">
+                    {t("entryLib.dupPending", { n: props.pendingMerges.length })}
+                  </span>
+                  <span className="text-[12px] text-ink-faint flex-1">{t("entryLib.dupPendingHint")}</span>
+                </div>
+                <div className="px-4 py-2 max-h-56 overflow-y-auto divide-y divide-[#EAD9A8]/40">
+                  {props.pendingMerges.map((p) => {
+                    const keep = props.entries.find((x) => x.id === p.keep);
+                    const drop = props.entries.find((x) => x.id === p.drop);
+                    if (!keep || !drop) return null;
+                    return (
+                      <div key={`${p.keep}->${p.drop}`} className="py-2.5 flex items-center gap-3 text-[13px]">
+                        <div className="flex-1 min-w-0 space-y-1">
+                          <p className="text-ink truncate" title={keep.text}>
+                            <span className="mr-1.5 px-1.5 py-0.5 rounded text-[10px] bg-[#E6F5EC] text-[#1E7A46]">{t("entryLib.dupKeep")}</span>
+                            {keep.text}
+                          </p>
+                          <p className="text-ink-soft truncate" title={drop.text}>
+                            <span className="mr-1.5 px-1.5 py-0.5 rounded text-[10px] bg-[#F0F1F3] text-[#5A6070]">{t("entryLib.dupDrop")}</span>
+                            {drop.text}
+                          </p>
+                        </div>
+                        <button
+                          onClick={() => props.onAcceptMerge(p)}
+                          className="h-7 px-2.5 rounded-lg border border-hairline text-[12px] text-[#1E7A46] hover:border-[#1E7A46]/50 transition-colors shrink-0"
+                        >
+                          {t("entryLib.dupMerge")}
+                        </button>
+                        <button
+                          onClick={() => props.onRejectMerge(p)}
+                          className="h-7 px-2.5 rounded-lg border border-hairline text-[12px] text-ink-faint hover:text-ink transition-colors shrink-0"
+                        >
+                          {t("entryLib.dupNotDup")}
+                        </button>
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
             )}

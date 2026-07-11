@@ -235,11 +235,15 @@ export async function searchMemory(
     { label: "技能库", file: path.join(workspace, "entries", "skill.jsonl") },
   ];
   const hits: MemorySearchHit[] = [];
+  const now = Date.now();
   for (const lib of libs) {
     const { entries } = fromJsonl(await readTextSafe(lib.file));
     if (!entries.length) continue;
     const byId = new Map(entries.map((e) => [e.id, e]));
-    for (const h of searchEntries(entries, query, { maxSimilar: 3 })) {
+    for (const h of searchEntries(entries, query, {
+      maxSimilar: 3,
+      scoreOf: (e) => scoreEntryAt(e, now),
+    })) {
       const e = h.entry;
       const relatedTexts = e.relations
         .slice(0, 3)

@@ -18,6 +18,9 @@ import {
   acceptRelationProposal,
   mergeProposals,
   relPairKey,
+  proposeMerges,
+  applyMerge,
+  mergePairKey,
   skillCandidates,
   mergeLibsForInjection,
   similarityScore,
@@ -404,6 +407,12 @@ console.log("\n[T] 统一检索入口 searchEntries（人和 AI 同一条路）"
   const flt = searchEntries([k1, k2, k3, k4, k5], "克莱因蓝", { filter: (e) => e.kinds.includes("decision") });
   eq(flt.filter((h) => h.match === "keyword").map((h) => h.entry.id), ["m-0901"], "筛选器约束关键词命中");
   eq(flt.filter((h) => h.match === "related").map((h) => h.entry.id), ["m-0903"], "带出的关联不受筛选器约束");
+  // scoreOf 尺子：没手动分时合成分决定排序（新鲜用户条目排过期三方前面）
+  const NOW2 = new Date("2026-07-11").getTime();
+  const fresh2 = mk({ id: "m-0906", text: "克莱因蓝新决定", kinds: ["decision"], source: "user", updatedAt: "2026-07-09" });
+  const stale2 = mk({ id: "m-0907", text: "克莱因蓝旧闻", kinds: ["state"], source: "third_party", truthiness: "unverified", updatedAt: "2026-01-01" });
+  const scored = searchEntries([stale2, fresh2], "克莱因蓝", { scoreOf: (e) => scoreEntryAt(e, NOW2) });
+  eq(scored.filter((h) => h.match === "keyword").map((h) => h.entry.id), ["m-0906", "m-0907"], "检索排序用合成分，新鲜用户条目在前");
   // 编号也能搜，归档照常可搜（检索是捞回通道）
   eq(searchEntries([k1, k2], "m-0902")[0]?.entry.id, "m-0902", "按编号命中");
   const arch = searchEntries([{ ...k2, archived: { reason: "manual", at: "2026-07-10" } }], "克莱因蓝");
@@ -432,6 +441,37 @@ console.log("\n[U] 注入挑选用合成分（所见档位 = 注入排序）");
     (e) => scoreEntryAt(e, NOW)
   );
   eq(manual.includedIds, ["m-1002"], "手动调过档的仍然优先");
+}
+
+console.log("\n[V] 去重合并提案");
+{
+  const d1 = mk({ id: "m-1101", text: "卖点是跨AI携带加记忆质量", kinds: ["decision"], weight: 80, relations: [{ to: "m-1103", rel: "related" }] });
+  const d2 = mk({ id: "m-1102", text: "卖点是跨AI携带加记忆质量，本地优先退出", kinds: ["decision"] });
+  const d3 = mk({ id: "m-1103", text: "完全另一件事情的记录", kinds: ["fact"] });
+  const d4 = mk({ id: "m-1104", text: "指向重复条目的第三方", kinds: ["fact"], relations: [{ to: "m-1102", rel: "related" }] });
+  const mps = proposeMerges([d1, d2, d3, d4]);
+  eq(mps, [{ keep: "m-1101", drop: "m-1102" }], "近重复的一对出提案，分高的留");
+  // 驳回防复提
+  eq(proposeMerges([d1, d2], [mergePairKey(mps[0])]), [], "已驳回不复提");
+  // 钉住的优先留，哪怕分低
+  const mps2 = proposeMerges([d1, { ...d2, pinned: true }]);
+  eq(mps2, [{ keep: "m-1102", drop: "m-1101" }], "钉住的优先保留");
+  // 执行合并：不丢信息
+  const merged2 = applyMerge([d1, d2, d3, d4], mps[0], "2026-07-11");
+  const keep = merged2.find((e) => e.id === "m-1101")!;
+  const drop = merged2.find((e) => e.id === "m-1102")!;
+  const third = merged2.find((e) => e.id === "m-1104")!;
+  eq(drop.archived?.reason, "superseded", "被并条目盖作废章");
+  ok(keep.relations.some((r) => r.to === "m-1102" && r.rel === "supersedes"), "保留条记取代边");
+  ok(keep.relations.some((r) => r.to === "m-1103"), "原有关联保留");
+  eq(third.relations[0]?.to, "m-1101", "指向被并条目的边改指保留条");
+  eq(keep.weight, 80, "手动分取较高");
+  // 归档的不参与
+  eq(proposeMerges([{ ...d1, archived: { reason: "manual", at: "2026-07-11" } }, d2]), [], "已归档不参与找重复");
+  // 相关但不重复的不出提案
+  const rel1 = mk({ id: "m-1105", text: "升权捞回是本轮重点工作" });
+  const rel2 = mk({ id: "m-1106", text: "本轮重点是修复星图布局问题" });
+  eq(proposeMerges([rel1, rel2]), [], "只是相关不算重复");
 }
 
 console.log(`\n结果：${pass} passed, ${fail} failed\n`);

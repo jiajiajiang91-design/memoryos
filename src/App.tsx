@@ -52,6 +52,10 @@ import {
   acceptRelationProposal,
   mergeProposals,
   relPairKey,
+  proposeMerges,
+  applyMerge,
+  mergeMergeProposals,
+  mergePairKey,
   EMPTY_SUGGESTIONS,
   skillCandidates,
   mergeLibsForInjection,
@@ -59,6 +63,7 @@ import {
   type EntryKind,
   type EntrySuggestions,
   type RelationProposal,
+  type MergeProposal,
 } from "./lib/entry";
 import EntryLibraryPage from "./components/EntryLibraryPage";
 import { ask } from "@tauri-apps/api/dialog";
@@ -574,10 +579,63 @@ export default function App() {
     if (!workspace || !entryLib || entryLib.lib.kind === "all") return;
     const key = relPairKey(p);
     const suggestions: EntrySuggestions = {
+      ...entryLib.suggestions,
       pendingRelations: entryLib.suggestions.pendingRelations.filter((x) => relPairKey(x) !== key),
       rejectedRelations: entryLib.suggestions.rejectedRelations.includes(key)
         ? entryLib.suggestions.rejectedRelations
         : [...entryLib.suggestions.rejectedRelations, key],
+    };
+    await writeEntrySuggestions(workspace, entryLib.lib, suggestions);
+    setEntryLib({ ...entryLib, suggestions });
+  };
+
+  // 一键找重复：疑似重复对进提案队列（脑图 调整·机械·去重合并 落地）。
+  const onFindDuplicates = async () => {
+    if (!workspace || !entryLib || entryLib.lib.kind === "all") return;
+    const now = Date.now();
+    const fresh = proposeMerges(
+      entryLib.entries,
+      entryLib.suggestions.rejectedMerges,
+      (e) => scoreEntryAt(e, now)
+    );
+    const pendingMerges = mergeMergeProposals(entryLib.suggestions.pendingMerges, fresh);
+    const newCount = pendingMerges.length - entryLib.suggestions.pendingMerges.length;
+    if (newCount === 0) {
+      showToast(t(pendingMerges.length ? "entryLib.dupPendingOnly" : "entryLib.dupNone", { n: pendingMerges.length }));
+      return;
+    }
+    const suggestions = { ...entryLib.suggestions, pendingMerges };
+    await writeEntrySuggestions(workspace, entryLib.lib, suggestions);
+    setEntryLib({ ...entryLib, suggestions });
+    showToast(t("entryLib.dupProposed", { n: newCount }));
+  };
+
+  // 确认合并：keep 收下 drop 的关联和高分，drop 盖作废章，指向 drop 的边改道。
+  const onAcceptMerge = async (p: MergeProposal) => {
+    if (!workspace || !entryLib || entryLib.lib.kind === "all") return;
+    const entries = applyMerge(entryLib.entries, p, new Date().toISOString().slice(0, 10));
+    const suggestions = {
+      ...entryLib.suggestions,
+      pendingMerges: entryLib.suggestions.pendingMerges.filter(
+        (x) => mergePairKey(x) !== mergePairKey(p)
+      ),
+    };
+    await writeEntriesLib(workspace, entryLib.lib, entries);
+    await writeEntrySuggestions(workspace, entryLib.lib, suggestions);
+    setEntryLib({ ...entryLib, entries, suggestions });
+    showToast(t("entryLib.merged"));
+  };
+
+  // 不是重复：出队并记防复提名单。
+  const onRejectMerge = async (p: MergeProposal) => {
+    if (!workspace || !entryLib || entryLib.lib.kind === "all") return;
+    const key = mergePairKey(p);
+    const suggestions: EntrySuggestions = {
+      ...entryLib.suggestions,
+      pendingMerges: entryLib.suggestions.pendingMerges.filter((x) => mergePairKey(x) !== key),
+      rejectedMerges: entryLib.suggestions.rejectedMerges.includes(key)
+        ? entryLib.suggestions.rejectedMerges
+        : [...entryLib.suggestions.rejectedMerges, key],
     };
     await writeEntrySuggestions(workspace, entryLib.lib, suggestions);
     setEntryLib({ ...entryLib, suggestions });
@@ -1037,6 +1095,10 @@ export default function App() {
           onAcceptRelation={onAcceptRelation}
           onRejectRelation={onRejectRelation}
           onAcceptAllRelations={onAcceptAllRelations}
+          pendingMerges={entryLib.suggestions.pendingMerges}
+          onFindDuplicates={onFindDuplicates}
+          onAcceptMerge={onAcceptMerge}
+          onRejectMerge={onRejectMerge}
           entryInjectionOn={project.entryInjection ?? false}
           onToggleInjection={toggleEntryInjection}
         />

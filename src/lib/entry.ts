@@ -488,13 +488,135 @@ export function suggestRelationsByOverlap(
   return { entries: cur, added: proposals.length };
 }
 
+// ── 去重合并：疑似重复的条目对走提案确认，合并不丢信息 ─────────────
+// 脑图 调整·机械·去重合并 的落地。重复的判定比"相关"严得多：一条的
+// 字对八成以上出现在另一条里才算。合并=保留一条，被并的盖作废章。
+
+/** 一条合并提案：keep 建议保留（分高或钉住的），drop 建议并入。 */
+export type MergeProposal = { keep: string; drop: string };
+
+/** 合并提案的防复提键，与方向无关（编号小的在前）。 */
+export function mergePairKey(p: MergeProposal): string {
+  const [a, b] = [p.keep, p.drop].sort();
+  return `merge:${a}->${b}`;
+}
+
+/**
+ * 找疑似重复的现行条目对。判定：任一方向的字对包含度过 0.8。
+ * keep 规则：钉住的留；否则 scoreOf 高的留；同分留编号小的。
+ * 已驳回的不复提。只产提案不改条目。
+ */
+export function proposeMerges(
+  entries: MemoryEntry[],
+  rejectedKeys: string[] = [],
+  scoreOf: (e: MemoryEntry) => number = (e) => e.weight ?? 50,
+  minScore = 0.8
+): MergeProposal[] {
+  const rejected = new Set(rejectedKeys);
+  const act = entries.filter((e) => !e.archived);
+  const out: MergeProposal[] = [];
+  for (let i = 0; i < act.length; i++) {
+    for (let j = i + 1; j < act.length; j++) {
+      const a = act[i], b = act[j];
+      const dup =
+        similarityScore(a.text, b.text) >= minScore ||
+        similarityScore(b.text, a.text) >= minScore;
+      if (!dup) continue;
+      let keep = a, drop = b;
+      if (b.pinned && !a.pinned) [keep, drop] = [b, a];
+      else if (a.pinned === b.pinned) {
+        const sa = scoreOf(a), sb = scoreOf(b);
+        if (sb > sa || (sb === sa && b.id < a.id)) [keep, drop] = [b, a];
+      }
+      const p = { keep: keep.id, drop: drop.id };
+      if (rejected.has(mergePairKey(p))) continue;
+      out.push(p);
+    }
+  }
+  return out;
+}
+
+/**
+ * 执行合并：保留 keep，drop 盖作废归档章。不丢信息——
+ * drop 的关联并进 keep，指向 drop 的边改指 keep，keep 记一条取代边，
+ * 手动分取两者较高，任一方钉住则保留钉住。
+ */
+export function applyMerge(
+  entries: MemoryEntry[],
+  p: MergeProposal,
+  now: string
+): MemoryEntry[] {
+  const keep = entries.find((e) => e.id === p.keep);
+  const drop = entries.find((e) => e.id === p.drop);
+  if (!keep || !drop || keep.id === drop.id) return entries;
+  return entries.map((e) => {
+    if (e.id === keep.id) {
+      const tos = new Set(e.relations.map((r) => r.to));
+      const merged = [...e.relations];
+      for (const r of drop.relations) {
+        if (r.to !== keep.id && !tos.has(r.to)) {
+          merged.push(r);
+          tos.add(r.to);
+        }
+      }
+      if (!tos.has(drop.id)) merged.push({ to: drop.id, rel: "supersedes" });
+      const weight =
+        e.weight !== undefined || drop.weight !== undefined
+          ? Math.max(e.weight ?? 0, drop.weight ?? 0)
+          : undefined;
+      return {
+        ...e,
+        relations: merged,
+        ...(weight !== undefined ? { weight } : {}),
+        ...(drop.pinned ? { pinned: true } : {}),
+        updatedAt: now,
+      };
+    }
+    if (e.id === drop.id) {
+      return { ...e, archived: { reason: "superseded" as const, at: now }, updatedAt: now };
+    }
+    // 其他条目指向 drop 的边改指 keep（已指 keep 则去重）
+    if (e.relations.some((r) => r.to === drop.id)) {
+      const hasKeep = e.relations.some((r) => r.to === keep.id);
+      const relations = e.relations
+        .filter((r) => !(r.to === drop.id && hasKeep))
+        .map((r) => (r.to === drop.id ? { ...r, to: keep.id } : r));
+      return { ...e, relations, updatedAt: now };
+    }
+    return e;
+  });
+}
+
 /** 提案旁挂文件的内容：待确认队列 + 已驳回名单（防复提）。 */
 export type EntrySuggestions = {
   pendingRelations: RelationProposal[];
   rejectedRelations: string[];
+  pendingMerges: MergeProposal[];
+  rejectedMerges: string[];
 };
 
-export const EMPTY_SUGGESTIONS: EntrySuggestions = { pendingRelations: [], rejectedRelations: [] };
+export const EMPTY_SUGGESTIONS: EntrySuggestions = {
+  pendingRelations: [],
+  rejectedRelations: [],
+  pendingMerges: [],
+  rejectedMerges: [],
+};
+
+/** 新合并提案并进已有队列，按防复提键去重。 */
+export function mergeMergeProposals(
+  pending: MergeProposal[],
+  fresh: MergeProposal[]
+): MergeProposal[] {
+  const seen = new Set(pending.map(mergePairKey));
+  const out = [...pending];
+  for (const p of fresh) {
+    const k = mergePairKey(p);
+    if (seen.has(k)) continue;
+    seen.add(k);
+    out.push(p);
+  }
+  return out;
+}
 
 /** 新提案并进已有队列，按防复提键去重，顺序保持先来的在前。 */
 export function mergeProposals(
@@ -570,23 +692,29 @@ export type EntrySearchHit = {
 /**
  * 在一个库里检索。关键词命中正文或编号（不分大小写），命中条目的关联
  * 双向一起带出；关键词覆盖不到的再按相近兜底。opts.filter 只约束关键词
- * 命中（带出的关联不受限，和记忆库页行为一致）。关键词命中按权重高在前，
+ * 命中（带出的关联不受限，和记忆库页行为一致）。关键词命中按分高在前，
+ * opts.scoreOf 是排序尺子（生产调用方传 weight.ts 的 scoreEntryAt，
+ * 与注入挑选、界面档位同一把尺；缺省退回原始 weight 字段仅供测试）。
  * 归档条目照常可搜（检索是捞回通道，遗忘只挡注入不挡检索）。
  */
 export function searchEntries(
   entries: MemoryEntry[],
   query: string,
-  opts: { filter?: (e: MemoryEntry) => boolean; maxSimilar?: number } = {}
+  opts: {
+    filter?: (e: MemoryEntry) => boolean;
+    maxSimilar?: number;
+    scoreOf?: (e: MemoryEntry) => number;
+  } = {}
 ): EntrySearchHit[] {
   const q = query.trim().toLowerCase();
   if (!q) return [];
-  const { filter, maxSimilar = 5 } = opts;
+  const { filter, maxSimilar = 5, scoreOf = (e) => e.weight ?? 50 } = opts;
   const keyword = entries.filter(
     (e) =>
       (e.text.toLowerCase().includes(q) || e.id.toLowerCase().includes(q)) &&
       (!filter || filter(e))
   );
-  keyword.sort((a, b) => (b.weight ?? 50) - (a.weight ?? 50));
+  keyword.sort((a, b) => scoreOf(b) - scoreOf(a));
   const hitIds = new Set(keyword.map((e) => e.id));
   const related: MemoryEntry[] = [];
   for (const e of entries) {

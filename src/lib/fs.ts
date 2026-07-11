@@ -645,6 +645,8 @@ export async function readEntrySuggestions(
     return {
       pendingRelations: Array.isArray(obj?.pendingRelations) ? obj.pendingRelations : [],
       rejectedRelations: Array.isArray(obj?.rejectedRelations) ? obj.rejectedRelations : [],
+      pendingMerges: Array.isArray(obj?.pendingMerges) ? obj.pendingMerges : [],
+      rejectedMerges: Array.isArray(obj?.rejectedMerges) ? obj.rejectedMerges : [],
     };
   } catch {
     return { ...EMPTY_SUGGESTIONS };
