@@ -370,6 +370,7 @@ const DICT: Record<string, Entry> = {
   "entryLib.graphEmpty": { zh: "还没有关联。在条目的编辑标签里加关联，或用复制给 AI 整理让 AI 提", en: "No relations yet. Add them in a memory's tag editor, or let an AI suggest them via the tidy-up prompt" },
   "entryLib.graphHint": { zh: "相连的记忆聚成一团，孤立的散在外围。悬停看关系，滚轮缩放，拖空白平移，拖点重摆", en: "Linked memories cluster; isolated ones drift outside. Hover for connections, scroll to zoom, drag the background to pan, drag a dot to move it" },
   "entryLib.graphReset": { zh: "复位", en: "Reset" },
+  "entryLib.graphHoverIdle": { zh: "悬停一个点，完整内容显示在这里；滚轮拉近看更多标签", en: "Hover a dot to read its full text here; zoom in to reveal more labels" },
   "entryLib.graphResetHint": { zh: "回到整幅视图，手动摆过的点也归位", en: "Back to the full view; manually moved dots return too" },
   "entryLib.legendRelated": { zh: "相关", en: "Related" },
   "entryLib.legendSession": { zh: "同一次对话", en: "Same session" },

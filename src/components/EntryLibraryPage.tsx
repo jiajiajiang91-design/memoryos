@@ -813,6 +813,14 @@ export default function EntryLibraryPage(props: Props) {
 // ── 星图（力导向布局，参照常见知识图谱的交互习惯）─────────────────
 // 相连的记忆自然聚成一团，孤立的散在外围；点越大关联越多，颜色是权重档；
 // 悬停高亮它和它的邻居，其他淡下去；实线是相关，虚线是同一次对话，橙线是取代。
+// 标签参照 Obsidian 的文字淡出阈值：透明度跟缩放挂钩，拉近才完全显字，
+// 缩远自动淡出防糊成一团；悬停的邻域任何缩放下都显字，全文在图下方读。
+
+/** 节点标签用正文，剥掉开头的 [日期][来源] 方括号前缀，露出记忆本体。 */
+function graphLabel(text: string, max = 16): string {
+  const s = text.replace(/^(\s*[[［][^\]］]*[\]］])+\s*/, "").trim() || text;
+  return s.length > max ? s.slice(0, max) + "…" : s;
+}
 
 // 关联提案审核面板：一键找关联的产出在这里等确认，接受建边、不要防复提。
 function ProposalPanel(props: {
@@ -1116,7 +1124,12 @@ function GraphView(props: {
           const fill = tier === "high" ? "#002FA7" : tier === "mid" ? "#8A93A8" : "#C6CBD6";
           const deg = degree.get(e.id) ?? 0;
           const r = 4 + Math.min(8, deg * 1.6) + (e.pinned ? 1.5 : 0);
-          const showLabel = hoverId ? neighbors.has(e.id) : deg > 0;
+          // 文字淡出阈值：有关联的 zoom=1 时六成透明度、拉近到 1.35 全显，
+          // 孤立点阈值更高（拉近才显字，减少外围杂讯）；悬停邻域强制全显
+          const zoom = W / view.w;
+          const fadeStart = deg > 0 ? 0.55 : 1.0;
+          const fadeAlpha = Math.max(0, Math.min(1, (zoom - fadeStart) / 0.8));
+          const labelAlpha = hoverId ? (neighbors.has(e.id) ? 1 : 0) : fadeAlpha;
           return (
             <g
               key={`n-${e.scopes[0] ?? ""}-${e.id}`}
@@ -1128,15 +1141,40 @@ function GraphView(props: {
             >
               <title>{e.text}</title>
               <circle cx={p.x} cy={p.y} r={r} fill={fill} stroke={e.pinned ? "#002FA7" : "none"} strokeWidth={e.pinned ? 2 : 0} />
-              {showLabel && (
-                <text x={p.x} y={p.y + r + 12} textAnchor="middle" className="fill-current text-ink-soft" fontSize="9.5">
-                  {e.text.length > 14 ? e.text.slice(0, 14) + "…" : e.text}
+              {labelAlpha > 0.02 && (
+                <text
+                  x={p.x}
+                  y={p.y + r + 12}
+                  textAnchor="middle"
+                  className="fill-current text-ink-soft"
+                  fontSize="9.5"
+                  opacity={labelAlpha}
+                >
+                  {graphLabel(e.text)}
                 </text>
               )}
             </g>
           );
         })}
       </svg>
+      {/* 悬停全文条：不用缩放也能读到完整记忆 */}
+      <div className="mt-2 min-h-[44px] px-4 py-2.5 rounded-lg border border-hairline bg-surface-soft">
+        {(() => {
+          const h = hoverId ? props.entries.find((x) => x.id === hoverId) : null;
+          if (!h) return <p className="text-[12px] text-ink-faint">{t("entryLib.graphHoverIdle")}</p>;
+          return (
+            <p className="text-[13px] text-ink leading-relaxed">
+              <span className="mr-2 text-[11px] text-ink-faint font-display">{h.id}</span>
+              {h.kinds.map((kk) => (
+                <span key={kk} className={`mr-1.5 px-1.5 py-0.5 rounded-full text-[10px] ${KIND_TINT[kk]}`}>
+                  {KIND_LABELS[kk]}
+                </span>
+              ))}
+              {h.text}
+            </p>
+          );
+        })()}
+      </div>
       <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-ink-faint">
         <span><span className="inline-block w-5 border-t-2 border-[#002FA7] align-middle mr-1" />{t("entryLib.legendRelated")}</span>
         <span><span className="inline-block w-5 border-t-2 border-dashed border-[#002FA7] align-middle mr-1" />{t("entryLib.legendSession")}</span>
