@@ -1,4 +1,4 @@
-// 权重模块地基库自测（src/lib/weight.ts，纯函数）。
+﻿// 权重模块地基库自测（src/lib/weight.ts，纯函数）。
 // 运行：npx esbuild scripts/weight.selftest.ts --bundle --platform=node --format=esm --outfile=tmp.weight.mjs && node tmp.weight.mjs
 //
 // 覆盖：合成/三档/有效分/初始分/新鲜度衰减/确定性/阈值校验/
@@ -98,7 +98,7 @@ const autoRec = mkRec({ factors: mkFactors({ importance: 0, freshness: 0, activi
 eq(effectiveScore(autoRec), 0, "无手动分→用自动合成(0)");
 eq(effectiveScore({ ...autoRec, manualScore: 88 }), 88, "手动分压过自动");
 
-// A9 初始分：用户拍板 > AI建议 > 三方
+// A9 初始分：用户确认 > AI建议 > 三方
 ok(initialScore("user_ratified") > initialScore("ai_suggestion"), "初始分 用户>AI建议");
 ok(initialScore("ai_suggestion") > initialScore("third_party"), "初始分 AI建议>三方");
 

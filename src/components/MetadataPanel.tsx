@@ -10,7 +10,7 @@ type Props = {
   onOpenBootstrap?: () => void;
   /** 无 cards.md 时显示「升级为现行卡」（PRD·记忆质量升级 F3 迁移入口）。 */
   onMigrateCards?: () => void;
-  /** 信任模式开关（06-10 用户拍板）：MCP 写回自动入库。 */
+  /** 信任模式开关（06-10 用户确认）：MCP 写回自动入库。 */
   onToggleTrustMode?: () => void;
 };
 

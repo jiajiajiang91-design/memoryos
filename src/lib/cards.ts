@@ -11,7 +11,7 @@ export const CARDS_BUDGET_CHARS = 1200;
 export type CardsStamp = { distilledOn: string };
 
 // 整理日期行（现时性展示 + 并发兜底）：`> 整理于 2026-06-10` / `> Tidied 2026-06-10`。
-// 用户拍板（06-10）：不向用户暴露 vN 版本号。旧写法 `> 版本: vN · 整理于/蒸馏于 …` 兼容可读。
+// 用户确认（06-10）：不向用户暴露 vN 版本号。旧写法 `> 版本: vN · 整理于/蒸馏于 …` 兼容可读。
 const STAMP_RE =
   /^>\s*(?:(?:版本|Version)[:：]\s*v\d+\s*·\s*)?(?:整理于|蒸馏于|Tidied|tidied|distilled)\s*(\d{4}-\d{2}-\d{2})\s*$/m;
 
@@ -39,7 +39,7 @@ export function cardsCharCount(content: string): number {
 }
 
 /**
- * Review 时被采纳的 AI 建议 → 升格为用户拍板的决策，插进「现行约束与决策」卡。
+ * Review 时被采纳的 AI 建议 → 升格为用户确认的决策，插进「现行约束与决策」卡。
  * （来源标记：升格日期 = 用户点头那天，不是 AI 提出那天。）
  */
 export function adoptSuggestionsIntoCards(
@@ -49,7 +49,7 @@ export function adoptSuggestionsIntoCards(
   lang: "zh" | "en" = "zh"
 ): string {
   if (!adopted.length) return cards;
-  const tag = lang === "en" ? "ratified in review" : "用户拍板·Review 采纳";
+  const tag = lang === "en" ? "confirmed in review" : "用户确认·Review 采纳";
   const lines = adopted.map((a) => `- [${today}][${tag}] ${a.trim()}`);
   // 新旧标题都认（约束与决策 = 现行命名；现行约束与决策 = 旧命名兼容）
   const headingRe = /^##\s*(?:约束与决策|现行约束与决策|Constraints & Decisions|Active Constraints & Decisions)[^\n]*$/m;

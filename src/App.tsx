@@ -168,7 +168,7 @@ export default function App() {
   const [mcpState, setMcpState] = useState<McpState | null>(null);
   const refreshPending = async () => {
     if (!workspace) { setPendingCount(0); setMcpState(null); return; }
-    // 信任模式（06-10 用户拍板）：先把信任项目的 MCP 待审条目自动入库，再刷新计数
+    // 信任模式（06-10 用户确认）：先把信任项目的 MCP 待审条目自动入库，再刷新计数
     try {
       const auto = await autoApplyTrustedInbox(workspace);
       if (auto > 0) {

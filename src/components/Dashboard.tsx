@@ -31,7 +31,7 @@ type Props = {
   /** AI 开场读什么：false=记忆卡片，true=记忆库（07-04 确认的注入来源开关）。 */
   entryInjectionOn: boolean;
   onToggleInjection: () => void;
-  /** 信任模式开关（06-10 用户拍板）。 */
+  /** 信任模式开关（06-10 用户确认）。 */
   onToggleTrustMode: () => void;
   /** Inbox 里 status=pending 的条数；>0 时显示「待审」入口。 */
   pendingInboxCount: number;
@@ -85,7 +85,7 @@ export default function Dashboard(props: Props) {
               </button>
             )}
 
-            {/* 旧项目转化引导（2026-06-11 拍板：每步操作引导旧格式转向记忆卡片）：
+            {/* 旧项目转化引导（2026-06-11 确认：每步操作引导旧格式转向记忆卡片）：
                 有旧资料但没卡片 → 黄色横幅进「整理项目记忆」。needsContext 时上面的引导横幅已覆盖。 */}
             {!project.cardsMarkdown.trim() && !props.bootstrapNeeds.needsContext && (
               <button

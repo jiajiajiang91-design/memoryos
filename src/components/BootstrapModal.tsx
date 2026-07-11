@@ -26,7 +26,7 @@ export default function BootstrapModal({
   existingAboutMe, existingContext, existingDecisions, latestSession,
   onClose, onSaved, onToast,
 }: Props) {
-  // 项目步骤永远产记忆卡片（2026-06-11 拍板：旧路径不再被喂养，每步操作引导转换）：
+  // 项目步骤永远产记忆卡片（2026-06-11 确认：旧路径不再被喂养，每步操作引导转换）：
   // 有旧资料 → 蒸馏整理；全空 → 问答生成第一页。00_context 旧引导退役。
   const hasLegacyMaterial = !!(
     (existingContext ?? "").trim() ||

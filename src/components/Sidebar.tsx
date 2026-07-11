@@ -91,7 +91,7 @@ export default function Sidebar(props: Props) {
         <button className="w-6 h-6 text-ink-faint hover:text-ink-soft transition-colors">«</button>
       </div>
 
-      {/* 一屏放完，不出滚动条（她拍板 06-11）：行高/组距收紧 + 滚动条隐藏，overflow 仅作极端兜底 */}
+      {/* 一屏放完，不出滚动条（她确认 06-11）：行高/组距收紧 + 滚动条隐藏，overflow 仅作极端兜底 */}
       <div className="flex-1 overflow-y-auto pt-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         <GroupHeader>{t("sidebar.workspace")}</GroupHeader>
         <Row icon={HelpCircle} label={t("sidebar.help")} onClick={onOpenHelp} accent />

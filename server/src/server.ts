@@ -189,13 +189,13 @@ export function createServer(workspace: string): McpServer {
           .string()
           .optional()
           .describe(
-            "记忆卡片模式：AI 认为该做但用户**没有拍板**的建议，每条一行。禁止把建议写进 keyDecisions——keyDecisions 只收用户明确拍板的（附原话+日期）。"
+            "记忆卡片模式：AI 认为该做但用户**没有确认**的建议，每条一行。禁止把建议写进 keyDecisions——keyDecisions 只收用户明确确认的（附原话+日期）。"
           ),
         proposedCards: z
           .string()
           .optional()
           .describe(
-            "【必传，缺失会被退回】整理后的 cards.md 完整新版（当前状态卡替换式更新、约束与决策卡追加新拍板、上次对话总结卡整卡替换；原样保留「> 整理于」行不改日期；全文≤1200字）。项目还没有记忆卡片时，基于 context/decisions/本轮对话生成第一页（无法确认拍板的决策标[来源待核]）。不知道当前卡片内容就先调 get_project_memory。"
+            "【必传，缺失会被退回】整理后的 cards.md 完整新版（当前状态卡替换式更新、约束与决策卡追加新确认、上次对话总结卡整卡替换；原样保留「> 整理于」行不改日期；全文≤1200字）。项目还没有记忆卡片时，基于 context/decisions/本轮对话生成第一页（不确定是否经用户确认的决策标[来源待核]）。不知道当前卡片内容就先调 get_project_memory。"
           ),
         proposedCardsSuperseded: z
           .array(z.string())
@@ -276,8 +276,8 @@ export function createServer(workspace: string): McpServer {
               text:
                 `未暂存：缺少记忆卡片更新（proposedCards）。请这样补全后重新调用 save_session_handoff：\n` +
                 `1. 先调用 get_project_memory 读取「${match.name}」；\n` +
-                `2. 若返回的 cards 非空：基于它整理完整新版（当前状态替换式更新、新拍板决策带日期追加、上次对话总结整卡替换、「> 整理于」行原样保留、全文≤1200字），被替换的旧条目放进 proposedCardsSuperseded；\n` +
-                `3. 若 cards 为空：基于 context / decisions / 本轮对话生成第一页记忆卡片（无法确认用户拍板过的决策标 [来源待核]）；\n` +
+                `2. 若返回的 cards 非空：基于它整理完整新版（当前状态替换式更新、新确认决策带日期追加、上次对话总结整卡替换、「> 整理于」行原样保留、全文≤1200字），被替换的旧条目放进 proposedCardsSuperseded；\n` +
+                `3. 若 cards 为空：基于 context / decisions / 本轮对话生成第一页记忆卡片（不确定是否经用户确认的决策标 [来源待核]）；\n` +
                 `4. 重新调用时附 proposedCards（完整卡片）与 aiSuggestions（你的建议，没有写 "None"）。`,
             },
           ],

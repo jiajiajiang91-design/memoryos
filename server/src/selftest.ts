@@ -314,7 +314,7 @@ async function run() {
     "乱码调用不写 inbox"
   );
 
-  const SELFTEST_CARDS = "# 记忆卡片 · Demo 项目\n> 整理于 2026-06-02\n\n## 项目卡\nselftest 用例。\n\n## 当前状态\n- 进行中：Phase 3\n\n## 约束与决策\n- [2026-06-02][用户拍板] 测试决策\n\n## 上次对话总结\nMCP push 做完。\n\n## 历史档案\n- 决策历史 → decisions.md\n";
+  const SELFTEST_CARDS = "# 记忆卡片 · Demo 项目\n> 整理于 2026-06-02\n\n## 项目卡\nselftest 用例。\n\n## 当前状态\n- 进行中：Phase 3\n\n## 约束与决策\n- [2026-06-02][用户确认] 测试决策\n\n## 上次对话总结\nMCP push 做完。\n\n## 历史档案\n- 决策历史 → decisions.md\n";
   const saveInput = { ...saveInputNoCards, proposedCards: SELFTEST_CARDS };
   const saveRes = await client2.callTool({ name: "save_session_handoff", arguments: saveInput });
   const saveStruct = (saveRes as any).structuredContent;

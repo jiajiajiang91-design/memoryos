@@ -26,7 +26,7 @@ export type ProjectListEntry = {
   name: string;
   currentGoal: string;
   updatedAt: string;
-  /** 信任模式（06-10 用户拍板）：true = app 会把该项目的 MCP 写回自动入库。 */
+  /** 信任模式（06-10 用户确认）：true = app 会把该项目的 MCP 写回自动入库。 */
   mcpAutoApply: boolean;
 };
 

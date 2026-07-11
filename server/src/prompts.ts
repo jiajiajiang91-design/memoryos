@@ -59,21 +59,21 @@ export function buildEndSessionToolPrompt(projectName?: string, entriesMode = fa
 1. 不要复述完整聊天记录，只保留下次继续工作真正需要继承的信息。
 2. 不要编造未在本轮对话中出现的信息。
 3. **不要粘贴 Markdown** —— 直接用结构化字段调用 \`save_session_handoff\` 工具。
-4. **来源纪律**：keyDecisions 只收我**明确拍板**的决定（每条附我的原话或紧贴转述 + 日期）；你认为该做但我没拍板的，一律放 aiSuggestions，禁止混入 keyDecisions 或写成既定计划。
+4. **来源纪律**：keyDecisions 只收我**明确确认**的决定（每条附我的原话或紧贴转述 + 日期）；你认为该做但我没确认的，一律放 aiSuggestions，禁止混入 keyDecisions 或写成既定计划。
 
 按下面字段组织内容传给工具（字段名即工具入参名）：
 - project: ${projLine}
 - whatWeWorkedOn：本轮做了什么（只写已发生的事实，过去时，3-6 条）
-- keyDecisions：我明确拍板的决策（原话 + 日期）
+- keyDecisions：我明确确认的决策（原话 + 日期）
 - currentState：当前项目状态
 - openQuestions：未解决问题
-- nextActions：下一步行动（只列我拍过板的）
+- nextActions：下一步行动（只列我确认过的）
 - compactContext：给下一次对话的压缩上下文（150-250 字）
-- aiSuggestions：你的建议（我没拍板的全放这里，每条一行；没有写 "None"）
+- aiSuggestions：你的建议（我没确认的全放这里，每条一行；没有写 "None"）
 
 **记忆卡片（proposedCards）必传**，分两种情况：
-- 项目已有记忆卡片（cards 非空）：基于它整理出完整新版——当前状态卡替换式更新、约束与决策卡追加新拍板条目、上次对话总结卡整卡替换；「> 整理于 …」行原样保留不改日期；全文 ≤1200 字。
-- 项目还没有记忆卡片（cards 为空）：基于 context / decisions / 本轮对话，生成**第一页**记忆卡片（结构：# 记忆卡片 · 项目名 / > 整理于 今天 / ## 项目卡 / ## 当前状态 / ## 约束与决策 / ## 上次对话总结 / ## 历史档案）。旧文档里无法确认我拍板过的决策标 \`[来源待核]\`。
+- 项目已有记忆卡片（cards 非空）：基于它整理出完整新版——当前状态卡替换式更新、约束与决策卡追加新确认条目、上次对话总结卡整卡替换；「> 整理于 …」行原样保留不改日期；全文 ≤1200 字。
+- 项目还没有记忆卡片（cards 为空）：基于 context / decisions / 本轮对话，生成**第一页**记忆卡片（结构：# 记忆卡片 · 项目名 / > 整理于 今天 / ## 项目卡 / ## 当前状态 / ## 约束与决策 / ## 上次对话总结 / ## 历史档案）。旧文档里不确定是否经我确认的决策标 \`[来源待核]\`。
 - proposedCardsSuperseded：被替换/移除的旧条目（每条一句话；首版生成则传空）
 
 若你本轮**没有**载入过这个项目的记忆，先调用 \`get_project_memory\`，再生成 proposedCards——不要凭空写。

@@ -521,7 +521,7 @@ export async function setProjectEntryInjection(
   await writeTextFile(metaPath, JSON.stringify(meta, null, 2));
 }
 
-/** 信任模式开关（06-10 用户拍板）：写 project.json 的 mcpAutoApply。 */
+/** 信任模式开关（06-10 用户确认）：写 project.json 的 mcpAutoApply。 */
 export async function setProjectTrustMode(
   workspace: string,
   slug: string,
@@ -536,7 +536,7 @@ export async function setProjectTrustMode(
 }
 
 /**
- * 信任模式自动入库（06-10 用户拍板，PRD·记忆质量升级）：
+ * 信任模式自动入库（06-10 用户确认，PRD·记忆质量升级）：
  * 扫 pending 收件箱，对开了信任模式的项目、来自 MCP 通道的条目自动入库——
  * 卡片提案直接应用（重写整理日期）+ 被替换条目归档 + 对话总结照存 + 条目移 archive(applied)。
  * 安全阀（保持不变的纪律）：
