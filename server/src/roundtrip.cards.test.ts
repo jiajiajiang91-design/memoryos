@@ -26,11 +26,11 @@ const proposedCards = `# 记忆卡片 · 测试项目
 - 当前卡点：无
 
 ## 约束与决策
-- [2026-06-03][用户拍板] 外部写回必经收件箱 Review
-- [2026-06-10][用户拍板] 现行层六卡合成一个文件
+- [2026-06-03][用户确认] 外部写回必经收件箱 Review
+- [2026-06-10][用户确认] 现行层六卡合成一个文件
 
 ## 上次对话总结
-拍板了管线四件套设计；本次从写入 schema 实施开始。
+确认了管线四件套设计；本次从写入 schema 实施开始。
 
 ## 历史档案
 - 决策历史 → decisions.md
@@ -145,7 +145,7 @@ const stamped = stampCards(proposedCards, "2026-06-10");
 ok(parseCardsStamp(stamped)?.distilledOn === "2026-06-10", "stampCards 重写整理日期");
 ok(!stamped.includes("版本:"), "新戳不再含版本号");
 const adopted = adoptSuggestionsIntoCards(proposedCards, ["给迁移弹窗加预览功能"], "2026-06-10");
-ok(adopted.includes("[2026-06-10][用户拍板·Review 采纳] 给迁移弹窗加预览功能"), "采纳建议升格进决策卡");
+ok(adopted.includes("[2026-06-10][用户确认·Review 采纳] 给迁移弹窗加预览功能"), "采纳建议升格进决策卡");
 ok(adopted.indexOf("Review 采纳") > adopted.indexOf("## 约束与决策"), "插在决策卡标题之后");
 ok(cardsCharCount("a b\nc") === 3, "cardsCharCount 去空白计数");
 

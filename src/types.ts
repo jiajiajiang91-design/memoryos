@@ -13,8 +13,10 @@ export type ProjectMeta = {
   statusLabel: string;
   createdAt: string;
   updatedAt: string;
-  /** 信任模式（06-10 用户拍板）：MCP 写回到收件箱后由 app 自动入库，不再逐条确认。默认 false。 */
+  /** 信任模式（06-10 用户确认）：MCP 写回到收件箱后由 app 自动入库，不再逐条确认。默认 false。 */
   mcpAutoApply?: boolean;
+  /** 开场注入使用条目库（07-04 确认）：开了用条目按权重拼的文本，不开仍用记忆卡片。默认 false。 */
+  entryInjection?: boolean;
 };
 
 export type Session = {
@@ -46,12 +48,14 @@ export type ParsedHandoff = {
   suggestedAboutMeUpdate: string;
   compactContext: string;
   // ── 现行卡模式（PRD·记忆质量升级 F1）。旧 inbox JSON 没有这些字段，全部 optional。──
-  /** AI 建议·待确认——未经用户拍板的想法只能住这栏（来源标记）。 */
+  /** AI 建议·待确认——未经用户确认的想法只能住这栏（来源标记）。 */
   aiSuggestions?: string;
   /** AI 连带产出的 cards.md 完整新版（六卡更新提案）。 */
   proposedCards?: string;
   /** 提案中被替换/移除的旧条目描述（Review 划线高亮用）。 */
   proposedCardsSuperseded?: string[];
+  /** 条目模式（07-11 写入口条目原生化）：本轮新记忆条目行 + !归档 !并入 调整标记。 */
+  proposedEntries?: string;
 };
 
 // ── Memory Inbox（PRD v0.3.1 §4.2）─────────────────────

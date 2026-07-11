@@ -1,9 +1,9 @@
 {
   "name": "memoryos-mcp",
-  "version": "0.3.0",
+  "version": "0.5.0",
   "private": true,
   "type": "module",
-  "description": "MemoryOS local MCP server (read-only skeleton: list_projects / get_project_memory).",
+  "description": "MemoryOS local MCP server: list_projects / get_project_memory / search_memory / save_session_handoff.",
   "bin": {
     "memoryos-mcp": "dist/index.mjs"
   },

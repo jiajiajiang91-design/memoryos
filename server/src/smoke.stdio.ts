@@ -29,6 +29,13 @@ fs.writeFileSync(
   path.join(projDir, "sessions", "session_2026-06-01_1200.md"),
   "## 9. Compact Context for Next Session\nsmoke compact\n"
 );
+fs.writeFileSync(
+  path.join(projDir, "entries.jsonl"),
+  JSON.stringify({
+    id: "m-0001", text: "冒烟条目一号", kinds: ["fact"], scopes: ["smoke-proj"],
+    source: "user", modality: "text", relations: [], createdAt: "2026-07-10", updatedAt: "2026-07-10",
+  }) + "\n"
+);
 
 // dist/index.mjs 与本文件同目录（都在 dist/）
 const entry = path.join(path.dirname(fileURLToPath(import.meta.url)), "index.mjs");
@@ -48,14 +55,18 @@ async function run() {
   const tools = await client.listTools();
   ok(
     tools.tools.map((t) => t.name).sort().join(",") ===
-      "get_project_memory,list_projects,save_session_handoff",
-    "tools/list 返回 3 个工具（list_projects / get_project_memory / save_session_handoff）"
+      "get_project_memory,list_projects,save_session_handoff,search_memory",
+    "tools/list 返回 4 个工具（list / get / search / save）"
   );
 
   const gp = await client.callTool({ name: "get_project_memory", arguments: { project: "smoke" } });
   const mem = (gp as any).structuredContent;
   ok(mem?.projectName === "Smoke 项目", "tools/call get_project_memory 容错匹配 'smoke' 命中");
   ok(mem?.latestCompactContext === "smoke compact", "pull 拿到最新 Compact Context");
+
+  const sr = await client.callTool({ name: "search_memory", arguments: { query: "冒烟条目" } });
+  const srs = (sr as any).structuredContent;
+  ok(srs?.hits?.[0]?.text === "冒烟条目一号", "tools/call search_memory 真 stdio 命中条目");
 
   await client.close();
   fs.rmSync(ws, { recursive: true, force: true });

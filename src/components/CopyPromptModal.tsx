@@ -1,8 +1,9 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Copy, X, ChevronRight, Plus, Check } from "lucide-react";
 import type { Project, SourceTool } from "../types";
 import { buildEndSessionPrompt } from "../lib/parser";
-import { copyToClipboard, readContextForPrompt } from "../lib/fs";
+import { copyToClipboard, readContextForPrompt, readEntriesLib } from "../lib/fs";
+import { exportToMarkdown } from "../lib/entry";
 import { PRESET_SOURCE_TOOLS } from "../lib/sourceTools";
 import { useT, useLang } from "../lib/i18n";
 
@@ -21,6 +22,18 @@ export default function CopyPromptModal({ workspace, project, defaultSourceTool,
   const [lang] = useLang();
   // 现行卡模式：cards.md 存在 → 结束指令带现行卡（生成四栏交接 + 六卡更新提案），不再带 context/decisions
   const cardsMode = !!project.cardsMarkdown.trim();
+  // 条目模式（07-11 写入口条目原生化）：开了条目注入且库非空 → AI 直接产条目行，
+  // 写入不再经六卡降级翻译。开关关掉即回卡片模式。
+  const [entriesMd, setEntriesMd] = useState("");
+  useEffect(() => {
+    if (!project.entryInjection) { setEntriesMd(""); return; }
+    let alive = true;
+    readEntriesLib(workspace, { kind: "project", slug: project.slug }).then((r) => {
+      const active = r.entries.filter((e) => !e.archived);
+      if (alive) setEntriesMd(active.length ? exportToMarkdown(active, `记忆库 · ${project.name}`) : "");
+    });
+    return () => { alive = false; };
+  }, [workspace, project.slug, project.entryInjection, project.name]);
   const [files, setFiles] = useState({ context: true, decisions: true, session: true, cards: true });
   const [tool, setTool] = useState<SourceTool>(defaultSourceTool || "Claude");
   const [customName, setCustomName] = useState("");
@@ -34,11 +47,12 @@ export default function CopyPromptModal({ workspace, project, defaultSourceTool,
         context: !cardsMode && files.context ? project.contextMarkdown : "",
         decisions: !cardsMode && files.decisions ? project.decisionsMarkdown : "",
         cards: cardsMode && files.cards ? project.cardsMarkdown : "",
+        entriesMd,
         latestSession: (files.session && project.sessions[0]?.rawMarkdown) || "",
         sourceTool: tool,
         lang,
       }),
-    [files, project, tool, lang, cardsMode]
+    [files, project, tool, lang, cardsMode, entriesMd]
   );
 
   const tokenEstimate = Math.round(preview.length / 2.5);
@@ -50,6 +64,7 @@ export default function CopyPromptModal({ workspace, project, defaultSourceTool,
       context: !cardsMode && files.context ? ctx.context : "",
       decisions: !cardsMode && files.decisions ? ctx.decisions : "",
       cards: cardsMode && files.cards ? ctx.cards : "",
+      entriesMd,
       latestSession: files.session ? ctx.latestSession : "",
       sourceTool: tool,
       lang,

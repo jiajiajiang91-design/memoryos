@@ -30,14 +30,51 @@ import {
   appendDecisionsArchive,
   appendRejectedSuggestion,
   setProjectTrustMode,
+  setProjectEntryInjection,
   autoApplyTrustedInbox,
+  readEntriesLib,
+  writeEntriesLib,
+  readEntrySuggestions,
+  writeEntrySuggestions,
+  syncProjectEntriesFromCards,
+  type EntryLib,
 } from "./lib/fs";
+import {
+  migrateCardsToEntries,
+  exportToMarkdown,
+  parseMarkdown,
+  reconcileImport,
+  nextEntryId,
+  buildInjectionFromEntries,
+  buildRefinePrompt,
+  migrateAboutMeToEntries,
+  proposeRelationsByOverlap,
+  acceptRelationProposal,
+  mergeProposals,
+  relPairKey,
+  proposeMerges,
+  applyMerge,
+  mergeMergeProposals,
+  mergePairKey,
+  extractAdjustProposals,
+  applySessionEntries,
+  EMPTY_SUGGESTIONS,
+  skillCandidates,
+  mergeLibsForInjection,
+  type MemoryEntry,
+  type EntryKind,
+  type EntrySuggestions,
+  type RelationProposal,
+  type MergeProposal,
+} from "./lib/entry";
+import EntryLibraryPage from "./components/EntryLibraryPage";
 import { ask } from "@tauri-apps/api/dialog";
 import { buildStartSessionPrompt } from "./lib/parser";
 import { stampCards, adoptSuggestionsIntoCards } from "./lib/cards";
 import { normalizeSourceTool } from "./lib/sourceTools";
 import { parsedToInboxHandoff, inboxItemToReviewState } from "./lib/inbox";
 import { logEvent } from "./lib/telemetry";
+import { scoreEntryAt } from "./lib/weight";
 import type { Project, ProjectMeta, ParsedHandoff, UpdateSuggestion, InboxItem, McpState } from "./types";
 import Sidebar from "./components/Sidebar";
 import Dashboard from "./components/Dashboard";
@@ -131,7 +168,7 @@ export default function App() {
   const [mcpState, setMcpState] = useState<McpState | null>(null);
   const refreshPending = async () => {
     if (!workspace) { setPendingCount(0); setMcpState(null); return; }
-    // 信任模式（06-10 用户拍板）：先把信任项目的 MCP 待审条目自动入库，再刷新计数
+    // 信任模式（06-10 用户确认）：先把信任项目的 MCP 待审条目自动入库，再刷新计数
     try {
       const auto = await autoApplyTrustedInbox(workspace);
       if (auto > 0) {
@@ -155,6 +192,13 @@ export default function App() {
   const [setupOpen, setSetupOpen] = useState(false);
   const [setupPath, setSetupPath] = useState<string>("");
   const [viewingSession, setViewingSession] = useState<string | null>(null);
+  // 记忆库双视图（记忆展示形态第 1 轮）：null=未打开。三库平级：项目、全局、技能；all=跨库只读回顾。
+  const [entryLib, setEntryLib] = useState<{
+    lib: EntryLib | { kind: "all" };
+    entries: MemoryEntry[];
+    badLineCount: number;
+    suggestions: EntrySuggestions;
+  } | null>(null);
   const [viewingCoreFile, setViewingCoreFile] = useState<
     null | { filename: string; fullPath: string; content: string; rawFile: string }
   >(null);
@@ -403,8 +447,37 @@ export default function App() {
     const aiSugs = suggestions.filter((x) => x.targetFile === "ai-suggestion");
     const adopted = aiSugs.filter((x) => x.selected && !x.rejected).map((x) => x.content);
     const cardsSug = suggestions.find((x) => x.targetFile === "cards.md");
+    const entriesSug = suggestions.find((x) => x.targetFile === "entries");
 
-    if (cardsSug?.selected && cardsSug.content) {
+    // ── 条目模式（07-11 写入口条目原生化）：新记忆条目直接入库来源保真，
+    //    !归档 !并入 变提案二次确认；采纳的 AI 建议成决策类条目 ──
+    if (entriesSug?.selected && entriesSug.content) {
+      const lib: EntryLib = { kind: "project", slug };
+      const cur = await readEntriesLib(workspace, lib);
+      let md = entriesSug.content;
+      for (const line of adopted) {
+        md += `\n- ${line} #决策 @AI建议`;
+      }
+      const res = applySessionEntries(cur.entries, md, slug, today);
+      await writeEntriesLib(workspace, lib, res.entries);
+      if (res.archives.length || res.merges.length) {
+        const sug = await readEntrySuggestions(workspace, lib);
+        await writeEntrySuggestions(workspace, lib, {
+          ...sug,
+          pendingArchives: [
+            ...sug.pendingArchives,
+            ...res.archives.filter(
+              (id) => !sug.pendingArchives.includes(id) && !sug.rejectedArchives.includes(id)
+            ),
+          ],
+          pendingMerges: mergeMergeProposals(
+            sug.pendingMerges,
+            res.merges.filter((p) => !sug.rejectedMerges.includes(mergePairKey(p)))
+          ),
+        });
+      }
+      saved++;
+    } else if (cardsSug?.selected && cardsSug.content) {
       // 一键整理：提案（+采纳的建议）落盘，重写整理日期，被替换条目盖作废章入决策档案
       let content = adoptSuggestionsIntoCards(cardsSug.content, adopted, today, lang);
       content = stampCards(content, today, lang);
@@ -412,12 +485,15 @@ export default function App() {
       if (cardsSug.superseded?.length) {
         await appendDecisionsArchive(workspace, slug, cardsSug.superseded, today);
       }
+      // 写入闭环：条目库已启用则同步，新行补进、被替代的盖归档章
+      await syncProjectEntriesFromCards(workspace, slug, content, cardsSug.superseded ?? []);
       saved++;
     } else if (adopted.length) {
       // 提案没勾但有采纳的建议 → 直接并进当前记忆卡片
       let content = adoptSuggestionsIntoCards(review.cards, adopted, today, lang);
       content = stampCards(content, today, lang);
       await writeProjectCards(workspace, slug, content);
+      await syncProjectEntriesFromCards(workspace, slug, content);
       saved++;
     }
     for (const r of aiSugs.filter((x) => x.rejected)) {
@@ -428,7 +504,7 @@ export default function App() {
       if (s.id === "save-session") {
         await saveSession(workspace, slug, review.raw);
         saved++;
-      } else if (s.targetFile === "cards.md" || s.targetFile === "ai-suggestion") {
+      } else if (s.targetFile === "cards.md" || s.targetFile === "ai-suggestion" || s.targetFile === "entries") {
         continue; // 上面已处理
       } else if (s.targetFile && s.content) {
         if (s.mode === "replace") {
@@ -451,6 +527,396 @@ export default function App() {
   };
 
   // 取消 = 保留 pending（不动 inbox 文件），用户可稍后从「待审」继续。
+  // 记忆库：打开时读对应库；项目库为空且有卡片时可一键把六卡整理成条目（机械迁移第一版）。
+  // all = 全局回顾：合并所有项目库加全局库加技能库，只读（三库编号独立会撞号，不提供编辑）。
+  const openEntryLib = async (lib?: EntryLib | { kind: "all" }) => {
+    if (!workspace) return;
+    if (lib?.kind === "all") {
+      const merged: MemoryEntry[] = [];
+      let bad = 0;
+      for (const p of projects) {
+        const r = await readEntriesLib(workspace, { kind: "project", slug: p.slug });
+        merged.push(...r.entries);
+        bad += r.badLines.length;
+      }
+      for (const k of ["global", "skill"] as const) {
+        const r = await readEntriesLib(workspace, { kind: k });
+        merged.push(...r.entries);
+        bad += r.badLines.length;
+      }
+      setEntryLib({ lib: { kind: "all" }, entries: merged, badLineCount: bad, suggestions: { ...EMPTY_SUGGESTIONS } });
+      return;
+    }
+    const target: EntryLib | null =
+      lib ?? (project ? { kind: "project", slug: project.slug } : null);
+    if (!target) return;
+    const r = await readEntriesLib(workspace, target);
+    const suggestions = await readEntrySuggestions(workspace, target);
+    setEntryLib({ lib: target, entries: r.entries, badLineCount: r.badLines.length, suggestions });
+  };
+  const onMigrateEntries = async () => {
+    if (!workspace || !entryLib) return;
+    const today = new Date().toISOString().slice(0, 10);
+    if (entryLib.lib.kind === "global") {
+      // 全局库：把关于我逐条整理成偏好条目
+      const aboutMe = await readAboutMe(workspace);
+      const migrated = migrateAboutMeToEntries(aboutMe, today);
+      await writeEntriesLib(workspace, { kind: "global" }, migrated);
+      setEntryLib({ ...entryLib, lib: { kind: "global" }, entries: migrated, badLineCount: 0 });
+      showToast(t("entryLib.migrateDone", { n: migrated.length }));
+      return;
+    }
+    if (!project) return;
+    const migrated = migrateCardsToEntries(project.cardsMarkdown, project.slug, today);
+    await writeEntriesLib(workspace, { kind: "project", slug: project.slug }, migrated);
+    setEntryLib({ ...entryLib, lib: { kind: "project", slug: project.slug }, entries: migrated, badLineCount: 0 });
+    showToast(t("entryLib.migrateDone", { n: migrated.length }));
+  };
+
+  // 一键找关联（07-10 提案走审核）：机械找相近只产提案进待确认队列，
+  // 接受才建边，驳回记防复提名单。已驳回和已有边不再复提。
+  const onAutoRelate = async () => {
+    if (!workspace || !entryLib || entryLib.lib.kind === "all") return;
+    const fresh = proposeRelationsByOverlap(entryLib.entries, entryLib.suggestions.rejectedRelations);
+    const pendingRelations = mergeProposals(entryLib.suggestions.pendingRelations, fresh);
+    const newCount = pendingRelations.length - entryLib.suggestions.pendingRelations.length;
+    if (newCount === 0) {
+      showToast(t(pendingRelations.length ? "entryLib.autoRelatePendingOnly" : "entryLib.autoRelateNone", { n: pendingRelations.length }));
+      return;
+    }
+    const suggestions = { ...entryLib.suggestions, pendingRelations };
+    await writeEntrySuggestions(workspace, entryLib.lib, suggestions);
+    setEntryLib({ ...entryLib, suggestions });
+    showToast(t("entryLib.autoRelateProposed", { n: newCount }));
+  };
+
+  // 接受一条关联提案：建边写库，提案出队。
+  const onAcceptRelation = async (p: RelationProposal) => {
+    if (!workspace || !entryLib || entryLib.lib.kind === "all") return;
+    const entries = acceptRelationProposal(entryLib.entries, p);
+    const suggestions = {
+      ...entryLib.suggestions,
+      pendingRelations: entryLib.suggestions.pendingRelations.filter(
+        (x) => relPairKey(x) !== relPairKey(p)
+      ),
+    };
+    await writeEntriesLib(workspace, entryLib.lib, entries);
+    await writeEntrySuggestions(workspace, entryLib.lib, suggestions);
+    setEntryLib({ ...entryLib, entries, suggestions });
+  };
+
+  // 驳回一条关联提案：出队并记防复提名单，下次一键找关联不再出。
+  const onRejectRelation = async (p: RelationProposal) => {
+    if (!workspace || !entryLib || entryLib.lib.kind === "all") return;
+    const key = relPairKey(p);
+    const suggestions: EntrySuggestions = {
+      ...entryLib.suggestions,
+      pendingRelations: entryLib.suggestions.pendingRelations.filter((x) => relPairKey(x) !== key),
+      rejectedRelations: entryLib.suggestions.rejectedRelations.includes(key)
+        ? entryLib.suggestions.rejectedRelations
+        : [...entryLib.suggestions.rejectedRelations, key],
+    };
+    await writeEntrySuggestions(workspace, entryLib.lib, suggestions);
+    setEntryLib({ ...entryLib, suggestions });
+  };
+
+  // 一键找重复：疑似重复对进提案队列（脑图 调整·机械·去重合并 落地）。
+  const onFindDuplicates = async () => {
+    if (!workspace || !entryLib || entryLib.lib.kind === "all") return;
+    const now = Date.now();
+    const fresh = proposeMerges(
+      entryLib.entries,
+      entryLib.suggestions.rejectedMerges,
+      (e) => scoreEntryAt(e, now)
+    );
+    const pendingMerges = mergeMergeProposals(entryLib.suggestions.pendingMerges, fresh);
+    const newCount = pendingMerges.length - entryLib.suggestions.pendingMerges.length;
+    if (newCount === 0) {
+      showToast(t(pendingMerges.length ? "entryLib.dupPendingOnly" : "entryLib.dupNone", { n: pendingMerges.length }));
+      return;
+    }
+    const suggestions = { ...entryLib.suggestions, pendingMerges };
+    await writeEntrySuggestions(workspace, entryLib.lib, suggestions);
+    setEntryLib({ ...entryLib, suggestions });
+    showToast(t("entryLib.dupProposed", { n: newCount }));
+  };
+
+  // 确认合并：keep 收下 drop 的关联和高分，drop 盖作废章，指向 drop 的边改道。
+  const onAcceptMerge = async (p: MergeProposal) => {
+    if (!workspace || !entryLib || entryLib.lib.kind === "all") return;
+    const entries = applyMerge(entryLib.entries, p, new Date().toISOString().slice(0, 10));
+    const suggestions = {
+      ...entryLib.suggestions,
+      pendingMerges: entryLib.suggestions.pendingMerges.filter(
+        (x) => mergePairKey(x) !== mergePairKey(p)
+      ),
+    };
+    await writeEntriesLib(workspace, entryLib.lib, entries);
+    await writeEntrySuggestions(workspace, entryLib.lib, suggestions);
+    setEntryLib({ ...entryLib, entries, suggestions });
+    showToast(t("entryLib.merged"));
+  };
+
+  // 不是重复：出队并记防复提名单。
+  const onRejectMerge = async (p: MergeProposal) => {
+    if (!workspace || !entryLib || entryLib.lib.kind === "all") return;
+    const key = mergePairKey(p);
+    const suggestions: EntrySuggestions = {
+      ...entryLib.suggestions,
+      pendingMerges: entryLib.suggestions.pendingMerges.filter((x) => mergePairKey(x) !== key),
+      rejectedMerges: entryLib.suggestions.rejectedMerges.includes(key)
+        ? entryLib.suggestions.rejectedMerges
+        : [...entryLib.suggestions.rejectedMerges, key],
+    };
+    await writeEntrySuggestions(workspace, entryLib.lib, suggestions);
+    setEntryLib({ ...entryLib, suggestions });
+  };
+
+  // 全部接受：队列里的提案逐条建边，一次写库。
+  const onAcceptAllRelations = async () => {
+    if (!workspace || !entryLib || entryLib.lib.kind === "all") return;
+    let entries = entryLib.entries;
+    for (const p of entryLib.suggestions.pendingRelations) {
+      entries = acceptRelationProposal(entries, p);
+    }
+    const n = entryLib.suggestions.pendingRelations.length;
+    const suggestions = { ...entryLib.suggestions, pendingRelations: [] };
+    await writeEntriesLib(workspace, entryLib.lib, entries);
+    await writeEntrySuggestions(workspace, entryLib.lib, suggestions);
+    setEntryLib({ ...entryLib, entries, suggestions });
+    showToast(t("entryLib.relAcceptedAll", { n }));
+  };
+
+  // 导出 md：复制到剪贴板，记录导出时间供导回时识别两边都改过的冲突。
+  const [entriesExportedAt, setEntriesExportedAt] = useState<string | null>(null);
+  const onExportEntriesMd = async () => {
+    if (!entryLib || entryLib.lib.kind === "all") return;
+    const title =
+      entryLib.lib.kind === "project"
+        ? `记忆库 · ${project?.name ?? entryLib.lib.slug}`
+        : entryLib.lib.kind === "global"
+          ? t("entryLib.libGlobal")
+          : t("entryLib.libSkill");
+    await copyToClipboard(exportToMarkdown(entryLib.entries, title));
+    setEntriesExportedAt(new Date().toISOString());
+    showToast(t("entryLib.exported"));
+  };
+  // 复制 AI 整理提示词：导出 md 包上调标签提关联的指令，改完从导回 md 贴回。
+  const onCopyRefinePrompt = async () => {
+    if (!entryLib) return;
+    await copyToClipboard(buildRefinePrompt(exportToMarkdown(entryLib.entries)));
+    setEntriesExportedAt(new Date().toISOString());
+    showToast(t("entryLib.refineCopied"));
+  };
+  // 导回 md：按编号对账。删除和两边都改过的都先问，取消则保留。
+  const onImportEntriesMd = async (md: string) => {
+    if (!workspace || !entryLib || entryLib.lib.kind === "all") return;
+    const parsed = parseMarkdown(md);
+    const plan = reconcileImport(entryLib.entries, parsed, {
+      exportedAt: entriesExportedAt ?? undefined,
+    });
+    // AI 调整标记（!归档 / !并入）变提案：过掉已在队列和已驳回的
+    const adj = extractAdjustProposals(parsed, entryLib.entries);
+    const newArchives = adj.archives.filter(
+      (id) =>
+        !entryLib.suggestions.pendingArchives.includes(id) &&
+        !entryLib.suggestions.rejectedArchives.includes(id)
+    );
+    const mergedPendingMerges = mergeMergeProposals(
+      entryLib.suggestions.pendingMerges,
+      adj.merges.filter((p) => !entryLib.suggestions.rejectedMerges.includes(mergePairKey(p)))
+    );
+    const newMergeCount = mergedPendingMerges.length - entryLib.suggestions.pendingMerges.length;
+    const proposalCount = newArchives.length + newMergeCount;
+    if (!plan.updates.length && !plan.adds.length && !plan.deletes.length && !proposalCount) {
+      showToast(t("entryLib.importNothing"));
+      return;
+    }
+    let confirmedDeletes = plan.deletes;
+    if (plan.deletes.length > 0) {
+      const okDel = await ask(t("entryLib.confirmDeletes", { n: plan.deletes.length }), {
+        title: t("entryLib.confirmDeletesTitle"), type: "warning",
+      });
+      if (!okDel) confirmedDeletes = [];
+    }
+    let applyConflicts = true;
+    const conflictCount = plan.updates.filter((u) => u.conflict).length;
+    if (conflictCount > 0) {
+      applyConflicts = await ask(t("entryLib.confirmConflicts", { n: conflictCount }), {
+        title: t("entryLib.confirmConflictsTitle"), type: "warning",
+      });
+    }
+    const today = new Date().toISOString();
+    const deleteIds = new Set(confirmedDeletes.map((e) => e.id));
+    const updateById = new Map(
+      plan.updates.filter((u) => applyConflicts || !u.conflict).map((u) => [u.current.id, u])
+    );
+    const next: MemoryEntry[] = entryLib.entries
+      .filter((e) => !deleteIds.has(e.id))
+      .map((e) => {
+        const u = updateById.get(e.id);
+        return u ? { ...e, text: u.text, kinds: u.kinds, relations: u.relations, updatedAt: today } : e;
+      });
+    const addScope =
+      entryLib.lib.kind === "project" ? entryLib.lib.slug : entryLib.lib.kind;
+    const counter: { id: string }[] = [...entryLib.entries];
+    for (const a of plan.adds) {
+      const id = nextEntryId(counter);
+      counter.push({ id });
+      next.push({
+        id, text: a.text, kinds: a.kinds, scopes: [addScope], source: a.source,
+        modality: "text",
+        relations: a.relTargets.map((to) => ({ to, rel: "related" as const })),
+        createdAt: today, updatedAt: today,
+      });
+    }
+    await writeEntriesLib(workspace, entryLib.lib, next);
+    const suggestions: EntrySuggestions = {
+      ...entryLib.suggestions,
+      pendingMerges: mergedPendingMerges,
+      pendingArchives: [...entryLib.suggestions.pendingArchives, ...newArchives],
+    };
+    if (proposalCount) await writeEntrySuggestions(workspace, entryLib.lib, suggestions);
+    setEntryLib({ ...entryLib, entries: next, badLineCount: 0, suggestions });
+    showToast(t("entryLib.importDone", {
+      u: updateById.size, a: plan.adds.length, d: confirmedDeletes.length,
+    }));
+    if (proposalCount) showToast(t("entryLib.importProposals", { n: proposalCount }));
+  };
+
+  // AI 建议归档：确认收档案（原因记手动，是用户确认的），不要则防复提。
+  const onAcceptArchiveProposal = async (id: string) => {
+    if (!workspace || !entryLib || entryLib.lib.kind === "all") return;
+    const today = new Date().toISOString();
+    const entries = entryLib.entries.map((e) =>
+      e.id === id
+        ? { ...e, archived: { reason: "manual" as const, at: today.slice(0, 10) }, updatedAt: today }
+        : e
+    );
+    const suggestions = {
+      ...entryLib.suggestions,
+      pendingArchives: entryLib.suggestions.pendingArchives.filter((x) => x !== id),
+    };
+    await writeEntriesLib(workspace, entryLib.lib, entries);
+    await writeEntrySuggestions(workspace, entryLib.lib, suggestions);
+    setEntryLib({ ...entryLib, entries, suggestions });
+  };
+  const onRejectArchiveProposal = async (id: string) => {
+    if (!workspace || !entryLib || entryLib.lib.kind === "all") return;
+    const suggestions: EntrySuggestions = {
+      ...entryLib.suggestions,
+      pendingArchives: entryLib.suggestions.pendingArchives.filter((x) => x !== id),
+      rejectedArchives: entryLib.suggestions.rejectedArchives.includes(id)
+        ? entryLib.suggestions.rejectedArchives
+        : [...entryLib.suggestions.rejectedArchives, id],
+    };
+    await writeEntrySuggestions(workspace, entryLib.lib, suggestions);
+    setEntryLib({ ...entryLib, suggestions });
+  };
+
+  // 单条更新（调档、钉住等）：改一条写回当前库，同一编号处处生效。
+  const onUpdateEntry = async (id: string, patch: Partial<MemoryEntry>) => {
+    if (!workspace || !entryLib || entryLib.lib.kind === "all") return;
+    const today = new Date().toISOString();
+    const next = entryLib.entries.map((e) =>
+      e.id === id ? { ...e, ...patch, updatedAt: today } : e
+    );
+    await writeEntriesLib(workspace, entryLib.lib, next);
+    setEntryLib({ ...entryLib, entries: next });
+  };
+
+  // 跨库移动：换归属。目标库重发编号避免撞号，写两个库，源库移除目标库追加。
+  const onMoveEntry = async (id: string, target: "project" | "global" | "skill") => {
+    if (!workspace || !entryLib || entryLib.lib.kind === "all") return;
+    const entry = entryLib.entries.find((e) => e.id === id);
+    if (!entry) return;
+    const targetLib: EntryLib =
+      target === "project"
+        ? project
+          ? { kind: "project", slug: project.slug }
+          : null!
+        : { kind: target };
+    if (!targetLib) return;
+    const tgt = await readEntriesLib(workspace, targetLib);
+    const newId = nextEntryId(tgt.entries);
+    const today = new Date().toISOString();
+    const scope = target === "project" ? (project?.slug ?? "") : target;
+    await writeEntriesLib(workspace, targetLib, [
+      ...tgt.entries,
+      { ...entry, id: newId, scopes: [scope], updatedAt: today },
+    ]);
+    const remaining = entryLib.entries.filter((e) => e.id !== id);
+    await writeEntriesLib(workspace, entryLib.lib, remaining);
+    setEntryLib({ ...entryLib, entries: remaining });
+    showToast(t("entryLib.moved"));
+  };
+
+  // 手写一条：进当前库，来源用户，默认类型按库给（标签之后可用编辑器改）。
+  const onAddEntry = async (text: string) => {
+    if (!workspace || !entryLib || entryLib.lib.kind === "all") return;
+    const body = text.trim();
+    if (!body) return;
+    const today = new Date().toISOString();
+    const scope = entryLib.lib.kind === "project" ? entryLib.lib.slug : entryLib.lib.kind;
+    const kind: EntryKind =
+      entryLib.lib.kind === "skill" ? "skill" : entryLib.lib.kind === "global" ? "preference" : "misc";
+    const next: MemoryEntry[] = [
+      ...entryLib.entries,
+      {
+        id: nextEntryId(entryLib.entries),
+        text: body, kinds: [kind], scopes: [scope], source: "user",
+        modality: "text", relations: [],
+        createdAt: today, updatedAt: today,
+      },
+    ];
+    await writeEntriesLib(workspace, entryLib.lib, next);
+    setEntryLib({ ...entryLib, entries: next });
+    showToast(t("entryLib.addDone"));
+  };
+
+  // 一键汇集：把各项目库和全局库里标了技能类型的条目移进技能库。
+  // 移动语义同 onMoveEntry：目标库重发编号、源库移除（07-10 确认汇集=移动）。
+  const onCollectSkills = async () => {
+    if (!workspace || !entryLib || entryLib.lib.kind !== "skill") return;
+    const today = new Date().toISOString();
+    const sources: EntryLib[] = [
+      ...projects.map((p): EntryLib => ({ kind: "project", slug: p.slug })),
+      { kind: "global" },
+    ];
+    const skillEntries = [...entryLib.entries];
+    const counter: { id: string }[] = [...skillEntries];
+    let moved = 0;
+    for (const src of sources) {
+      const r = await readEntriesLib(workspace, src);
+      const cands = skillCandidates(r.entries);
+      if (!cands.length) continue;
+      const candIds = new Set(cands.map((c) => c.id));
+      for (const c of cands) {
+        const id = nextEntryId(counter);
+        counter.push({ id });
+        skillEntries.push({ ...c, id, scopes: ["skill"], updatedAt: today });
+        moved++;
+      }
+      await writeEntriesLib(workspace, src, r.entries.filter((e) => !candIds.has(e.id)));
+    }
+    if (!moved) {
+      showToast(t("entryLib.collectNone"));
+      return;
+    }
+    await writeEntriesLib(workspace, { kind: "skill" }, skillEntries);
+    setEntryLib({ ...entryLib, entries: skillEntries });
+    showToast(t("entryLib.collectDone", { n: moved }));
+  };
+
+  // AI 开场读什么：记忆卡片 ⇄ 记忆库（主页和记忆库页共用同一开关）。
+  const toggleEntryInjection = async () => {
+    if (!workspace || !project) return;
+    const next = !project.entryInjection;
+    await setProjectEntryInjection(workspace, project.slug, next);
+    setRefreshKey((k) => k + 1);
+    showToast(next ? t("entryLib.injectionOnToast") : t("entryLib.injectionOffToast"));
+  };
+
   const onReviewCancel = async () => {
     setReview(null);
     await refreshPending();
@@ -628,7 +1094,7 @@ export default function App() {
         sessionsCount={project?.sessions.length ?? 0}
         hasCards={!!project?.cardsMarkdown.trim()}
         mcpState={mcpState}
-        onSelectProject={(slug) => { setCurrentSlug(slug); setReview(null); }}
+        onSelectProject={(slug) => { setCurrentSlug(slug); setReview(null); setEntryLib(null); }}
         onNewProject={() => setNewProjectOpen(true)}
         onRefreshProjects={() => {
           setRefreshKey((k) => k + 1);
@@ -684,6 +1150,43 @@ export default function App() {
           onDiscard={review.inboxFilename ? onReviewDiscard : undefined}
           channel={review.channel}
         />
+      ) : entryLib && project ? (
+        <EntryLibraryPage
+          projectName={project.name}
+          entries={entryLib.entries}
+          badLineCount={entryLib.badLineCount}
+          libKind={entryLib.lib.kind}
+          onSwitchLib={(k) =>
+            openEntryLib(k === "project" ? { kind: "project", slug: project.slug } : { kind: k as "global" | "skill" | "all" })
+          }
+          onBack={() => setEntryLib(null)}
+          canMigrate={
+            entryLib.lib.kind === "global" ||
+            (entryLib.lib.kind === "project" && !!project.cardsMarkdown.trim())
+          }
+          onMigrate={onMigrateEntries}
+          onAutoRelate={onAutoRelate}
+          onExportMd={onExportEntriesMd}
+          onImportMd={onImportEntriesMd}
+          onCopyRefinePrompt={onCopyRefinePrompt}
+          onUpdateEntry={onUpdateEntry}
+          onMoveEntry={onMoveEntry}
+          onAddEntry={onAddEntry}
+          onCollectSkills={onCollectSkills}
+          pendingRelations={entryLib.suggestions.pendingRelations}
+          onAcceptRelation={onAcceptRelation}
+          onRejectRelation={onRejectRelation}
+          onAcceptAllRelations={onAcceptAllRelations}
+          pendingMerges={entryLib.suggestions.pendingMerges}
+          onFindDuplicates={onFindDuplicates}
+          onAcceptMerge={onAcceptMerge}
+          onRejectMerge={onRejectMerge}
+          pendingArchives={entryLib.suggestions.pendingArchives}
+          onAcceptArchiveProposal={onAcceptArchiveProposal}
+          onRejectArchiveProposal={onRejectArchiveProposal}
+          entryInjectionOn={project.entryInjection ?? false}
+          onToggleInjection={toggleEntryInjection}
+        />
       ) : project ? (
         <Dashboard
           project={project}
@@ -693,9 +1196,41 @@ export default function App() {
           onCopyStartPrompt={async () => {
             if (!workspace || !project) return;
             const ctx = await readContextForStartPrompt(workspace, project.slug);
+            // 开关开且记忆库有现行条目 → AI 开场读条目按分挑的文本；否则仍用记忆卡片
+            let cards = ctx.cards;
+            let aboutMe = ctx.aboutMe;
+            let archiveHint = true;
+            if (project.entryInjection) {
+              const lib = await readEntriesLib(workspace, { kind: "project", slug: project.slug });
+              const activeEntries = lib.entries.filter((e) => !e.archived);
+              // 回落规则以项目库为准；有条目时再拼上技能库，合并按分挑（07-10 确认）
+              if (activeEntries.length) {
+                const skillLib = await readEntriesLib(workspace, { kind: "skill" });
+                // 挑选尺子 = 界面重要度同款合成分（所见即所读）
+                const now = Date.now();
+                const inj = buildInjectionFromEntries(
+                  mergeLibsForInjection(activeEntries, skillLib.entries),
+                  undefined,
+                  (e) => scoreEntryAt(e, now)
+                );
+                cards = `# 记忆条目 · ${project.name}\n\n${inj.text}`;
+                archiveHint = false;
+                // 关于我即全局库的 md 版（07-11 确认）：全局库有内容就读它，
+                // 空则回落 about_me.md，与卡片切条目同一套规则
+                const globalLib = await readEntriesLib(workspace, { kind: "global" });
+                const gActive = globalLib.entries.filter((e) => !e.archived);
+                if (gActive.length) {
+                  const gInj = buildInjectionFromEntries(gActive, undefined, (e) => scoreEntryAt(e, now));
+                  aboutMe = `# 关于我（记忆条目）\n\n${gInj.text}`;
+                }
+              }
+            }
             const prompt = buildStartSessionPrompt({
               projectName: project.name,
               ...ctx,
+              aboutMe,
+              cards,
+              archiveHint,
               lang,
             });
             await copyToClipboard(prompt);
@@ -710,6 +1245,9 @@ export default function App() {
           onOpenBootstrap={() => setBootstrapOpen(true)}
           onMigrateCards={() => setMigrateCardsOpen(true)}
           onEditCards={() => openCoreFile("cards.md")}
+          onOpenEntryLib={() => openEntryLib()}
+          entryInjectionOn={project.entryInjection ?? false}
+          onToggleInjection={toggleEntryInjection}
           onToggleTrustMode={async () => {
             if (!workspace || !project) return;
             const next = !project.mcpAutoApply;
@@ -792,7 +1330,10 @@ export default function App() {
             if (f === "about_me.md") await writeAboutMe(workspace, newContent);
             else if (f === "00_context.md") await writeProjectContext(workspace, currentSlug, newContent);
             else if (f === "decisions.md") await writeProjectDecisions(workspace, currentSlug, newContent);
-            else if (f === "cards.md") await writeProjectCards(workspace, currentSlug, newContent);
+            else if (f === "cards.md") {
+              await writeProjectCards(workspace, currentSlug, newContent);
+              await syncProjectEntriesFromCards(workspace, currentSlug, newContent);
+            }
             setViewingCoreFile(null);
             setRefreshKey((k) => k + 1);
             showToast(t("toast.fileSaved", { name: viewingCoreFile.filename }));

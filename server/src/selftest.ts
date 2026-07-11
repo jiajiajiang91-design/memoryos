@@ -13,7 +13,7 @@ import * as os from "node:os";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { createServer } from "./server";
-import { listProjects, getProjectMemory, matchProject } from "./workspace";
+import { listProjects, getProjectMemory, matchProject, searchMemory } from "./workspace";
 import { assertWithinWorkspace } from "./inbox";
 import { extractLatestCompactContext } from "../../src/lib/sessionParse";
 import { inboxItemToReviewState, inboxHandoffToMarkdown } from "../../src/lib/inbox";
@@ -90,6 +90,48 @@ fs.writeFileSync(path.join(projDir, "sessions", "session_2026-06-01_1030.md"), N
 // 干扰文件：非 session 的 README 应被忽略
 fs.writeFileSync(path.join(projDir, "sessions", "README.md"), "# not a session\n");
 
+// 条目库 fixture：search_memory 用。项目库两条现行带关联 + 一条归档，技能库一条。
+const entry = (id: string, text: string, kinds: string[], extra: Record<string, unknown> = {}) =>
+  JSON.stringify({
+    id, text, kinds, scopes: ["demo-proj"], source: "user", modality: "text",
+    relations: [], createdAt: "2026-07-01", updatedAt: "2026-07-01", ...extra,
+  });
+fs.writeFileSync(
+  path.join(projDir, "entries.jsonl"),
+  [
+    entry("m-0001", "决定用克莱因蓝做主色", ["decision"], {
+      relations: [{ to: "m-0002", rel: "related" }, { to: "m-0003", rel: "supersedes" }],
+    }),
+    entry("m-0002", "配色定稿后不再反复改", ["constraint"]),
+    entry("m-0003", "旧的导航方案已废弃", ["fact"], { archived: { reason: "manual", at: "2026-07-01" } }),
+  ].join("\n") + "\n"
+);
+fs.mkdirSync(path.join(ws, "entries"), { recursive: true });
+fs.writeFileSync(
+  path.join(ws, "entries", "skill.jsonl"),
+  entry("m-0001", "写周报的固定套路先列结论", ["skill"]).replace('"demo-proj"', '"skill"') + "\n"
+);
+// 条目模式 fixture：开了 entryInjection 的项目（save_session_handoff 契约按开关切换）
+const entryProjDir = path.join(ws, "projects", "entry-proj");
+fs.mkdirSync(entryProjDir, { recursive: true });
+fs.writeFileSync(
+  path.join(entryProjDir, "project.json"),
+  JSON.stringify({
+    name: "条目项目",
+    currentGoal: "试条目写入",
+    currentGoalBullets: [],
+    createdAt: "2026-07-11T00:00:00.000Z",
+    updatedAt: "2026-07-11T00:00:00.000Z",
+    entryInjection: true,
+  }, null, 2)
+);
+fs.writeFileSync(path.join(entryProjDir, "entries.jsonl"), entry("m-0001", "条目项目的现有记忆", ["fact"]).replace('"demo-proj"', '"entry-proj"') + "\n");
+// 全局库 fixture：开了条目读取的项目，关于我改读全局库（07-11 确认）
+fs.writeFileSync(
+  path.join(ws, "entries", "global.jsonl"),
+  entry("m-0001", "全局偏好：先给结论再给细节", ["preference"]).replace('"demo-proj"', '"global"') + "\n"
+);
+
 // 埋点写到临时目录，便于断言（覆盖 appData 推断）。telemetry / mcp_state 都不许进 workspace 正式区。
 const telemetryDir = fs.mkdtempSync(path.join(os.tmpdir(), "memoryos-telemetry-"));
 process.env.MEMORYOS_TELEMETRY_DIR = telemetryDir;
@@ -121,6 +163,7 @@ async function run() {
   const projects = await listProjects(ws);
   eq(projects, [
     { slug: "demo-proj", name: "Demo 项目", currentGoal: "跑通 MCP pull", updatedAt: "2026-06-01T10:30:00.000Z", mcpAutoApply: false },
+    { slug: "entry-proj", name: "条目项目", currentGoal: "试条目写入", updatedAt: "2026-07-11T00:00:00.000Z", mcpAutoApply: false },
   ], "list_projects 输出 = project.json 原值（slug/name/currentGoal/updatedAt/mcpAutoApply）");
 
   const mem = await getProjectMemory(ws, "demo-proj");
@@ -146,6 +189,37 @@ async function run() {
   ok(matchProject(projects, "不存在的项目xyz") === null, "匹配不到返回 null");
   ok((await getProjectMemory(ws, "nope")) === null, "get_project_memory 匹配不到返回 null");
 
+  console.log("\n[B1] 全局库替换关于我（07-11 确认：关于我即全局库的 md 版）");
+  const entryMem = await getProjectMemory(ws, "条目项目");
+  ok(entryMem !== null, "条目项目命中");
+  ok(entryMem!.aboutMe.includes("全局偏好：先给结论再给细节"), "开了条目读取且全局库非空 → 关于我读全局库");
+  ok(!entryMem!.aboutMe.includes("我是 Jiajia"), "全局库非空时不再带 about_me.md 原文");
+  ok(entryMem!.cards.includes("条目项目的现有记忆"), "项目条目照常进读取");
+  eq(mem!.aboutMe, ABOUT_ME, "未开开关的项目关于我仍是 about_me.md 原文");
+
+  console.log("\n[B2] search_memory 纯函数：拉取通道（推之外的拉）");
+  const sm = await searchMemory(ws, "克莱因蓝", "demo");
+  ok(sm !== null, "search_memory 项目容错匹配命中");
+  const kw = sm!.hits.filter((h) => h.match === "keyword");
+  eq(kw.map((h) => h.id), ["m-0001"], "关键词命中");
+  eq(kw[0].lib, "Demo 项目", "命中标注所在库");
+  eq(kw[0].kinds, ["决策"], "类型输出中文标签");
+  eq(
+    kw[0].relatedTexts,
+    ["[相关] 配色定稿后不再反复改", "[取代了] 旧的导航方案已废弃"],
+    "命中条目带关联正文且标关系类型"
+  );
+  ok(sm!.hits.some((h) => h.id === "m-0002" && h.match === "related"), "关联条目一起带出");
+  const smArch = await searchMemory(ws, "导航方案");
+  ok(smArch!.hits.some((h) => h.id === "m-0003" && !!h.archived), "已归档条目搜得到且标注归档");
+  const arch3 = smArch!.hits.find((h) => h.id === "m-0003")!;
+  eq(arch3.supersededBy, "已被 m-0001 取代：决定用克莱因蓝做主色", "被取代的旧账明示取代者");
+  const smSkill = await searchMemory(ws, "周报");
+  ok(smSkill!.hits.some((h) => h.lib === "技能库"), "不传项目时技能库也在检索范围");
+  ok((await searchMemory(ws, "克莱因蓝", "无此项目zzz")) === null, "项目匹配不到返回 null");
+  const smNone = await searchMemory(ws, "完全不存在的词xyzq");
+  eq(smNone!.hits, [], "搜不到返回空命中不报错");
+
   console.log("\n[C] MCP 协议端到端（in-memory Client ↔ server）");
   const [clientT, serverT] = InMemoryTransport.createLinkedPair();
   const server = createServer(ws);
@@ -157,8 +231,8 @@ async function run() {
   const toolNames = toolList.tools.map((t) => t.name).sort();
   eq(
     toolNames,
-    ["get_project_memory", "list_projects", "save_session_handoff"],
-    "listTools 暴露 3 个工具（含 save_session_handoff）"
+    ["get_project_memory", "list_projects", "save_session_handoff", "search_memory"],
+    "listTools 暴露 4 个工具（含 search_memory）"
   );
 
   const lp = await client.callTool({ name: "list_projects", arguments: {} });
@@ -170,6 +244,15 @@ async function run() {
   const gp = await client.callTool({ name: "get_project_memory", arguments: { project: "demo" } });
   const gpStruct = (gp as any).structuredContent;
   eq(gpStruct, mem, "callTool(get_project_memory).structuredContent 与纯函数一致（容错匹配 'demo'）");
+
+  const sr = await client.callTool({ name: "search_memory", arguments: { query: "克莱因蓝", project: "demo" } });
+  const srStruct = (sr as any).structuredContent;
+  eq(srStruct, sm, "callTool(search_memory).structuredContent 与纯函数一致");
+  const srMiss = await client.callTool({ name: "search_memory", arguments: { query: "x", project: "无此项目zzz" } });
+  ok((srMiss as any).isError === true, "search_memory 项目未命中 → isError=true");
+  const srNone = await client.callTool({ name: "search_memory", arguments: { query: "完全不存在的词xyzq" } });
+  ok(String((srNone as any).content[0].text).includes("没有找到"), "search_memory 无命中返回可读提示非报错");
+  ok((srNone as any).isError !== true, "search_memory 无命中不算错误");
 
   const miss = await client.callTool({ name: "get_project_memory", arguments: { project: "无此项目zzz" } });
   ok((miss as any).isError === true, "get_project_memory 未命中 → isError=true");
@@ -244,7 +327,7 @@ async function run() {
     "乱码调用不写 inbox"
   );
 
-  const SELFTEST_CARDS = "# 记忆卡片 · Demo 项目\n> 整理于 2026-06-02\n\n## 项目卡\nselftest 用例。\n\n## 当前状态\n- 进行中：Phase 3\n\n## 约束与决策\n- [2026-06-02][用户拍板] 测试决策\n\n## 上次对话总结\nMCP push 做完。\n\n## 历史档案\n- 决策历史 → decisions.md\n";
+  const SELFTEST_CARDS = "# 记忆卡片 · Demo 项目\n> 整理于 2026-06-02\n\n## 项目卡\nselftest 用例。\n\n## 当前状态\n- 进行中：Phase 3\n\n## 约束与决策\n- [2026-06-02][用户确认] 测试决策\n\n## 上次对话总结\nMCP push 做完。\n\n## 历史档案\n- 决策历史 → decisions.md\n";
   const saveInput = { ...saveInputNoCards, proposedCards: SELFTEST_CARDS };
   const saveRes = await client2.callTool({ name: "save_session_handoff", arguments: saveInput });
   const saveStruct = (saveRes as any).structuredContent;
@@ -270,8 +353,8 @@ async function run() {
   eq(item.handoff.whatWeWorkedOn, saveInput.whatWeWorkedOn, "handoff.whatWeWorkedOn 对齐入参");
   eq(item.handoff.compactContext, saveInput.compactContext, "handoff.compactContext 对齐入参");
   eq(item.handoff.suggestedDecisionsUpdate, "", "未传的 suggested 字段补空串（对齐 ParsedHandoff）");
-  // 13 = 旧 10 字段 + 现行卡模式 3 字段（aiSuggestions / proposedCards / proposedCardsSuperseded，PRD·记忆质量升级 F1）
-  ok(Object.keys(item.handoff).length === 13, "handoff 恰好 13 个字段（= ParsedHandoff 含现行卡字段）");
+  // 14 = 旧 10 字段 + 现行卡模式 3 字段 + 条目模式 1 字段（proposedEntries，07-11 写入口条目原生化）
+  ok(Object.keys(item.handoff).length === 14, "handoff 恰好 14 个字段（= ParsedHandoff 含现行卡+条目字段）");
   eq(item.handoff.aiSuggestions, "", "未传 aiSuggestions 补空串");
   eq(item.handoff.proposedCards, saveInput.proposedCards, "proposedCards 对齐入参（契约强制后必有）");
   ok(Array.isArray(item.handoff.proposedCardsSuperseded) && item.handoff.proposedCardsSuperseded.length === 0, "未传 proposedCardsSuperseded 补空数组");
@@ -300,6 +383,31 @@ async function run() {
     1,
     "未匹配不写盘（inbox 仍只有 1 条）"
   );
+
+  // ── 条目模式契约（07-11 写入口条目原生化）：开了条目注入的项目按开关切换 ──
+  console.log("\n[E2] save_session_handoff 条目模式：开关切契约");
+  const entrySaveNoEntries = { ...saveInputNoCards, project: "条目项目", proposedCards: SELFTEST_CARDS };
+  const entryBounce = await client2.callTool({ name: "save_session_handoff", arguments: entrySaveNoEntries });
+  ok((entryBounce as any).isError === true, "条目模式缺 proposedEntries → 退回（传了卡片也不行）");
+  ok(String((entryBounce as any).content[0].text).includes("proposedEntries"), "退回文案教条目行格式");
+  const entrySave = await client2.callTool({
+    name: "save_session_handoff",
+    arguments: {
+      ...saveInputNoCards,
+      project: "条目项目",
+      proposedEntries: "- 本轮确认了新节奏 #决策 @用户\n- [m-0001] 条目项目的现有记忆 !归档",
+    },
+  });
+  ok((entrySave as any).structuredContent?.staged === true, "条目模式带 proposedEntries → staged=true");
+  const entryItems = fs.readdirSync(inboxDir).filter((n) => n.endsWith(".json") && !n.startsWith("."));
+  eq(entryItems.length, 2, "条目模式 item 落盘");
+  const entryItem = entryItems
+    .map((n) => JSON.parse(fs.readFileSync(path.join(inboxDir, n), "utf8")) as InboxItem)
+    .find((x) => x.slug === "entry-proj")!;
+  ok(!!entryItem, "条目模式 item 归到 entry-proj");
+  ok((entryItem.handoff.proposedEntries ?? "").includes("#决策 @用户"), "proposedEntries 原样入 inbox");
+  ok((entryItem.handoff.proposedEntries ?? "").includes("!归档"), "调整标记原样入 inbox");
+  ok(inboxHandoffToMarkdown(entryItem.handoff).includes("## 5. Proposed Memory Entries"), "条目模式 item 渲染出条目提案段");
 
   console.log("\n[F] 路径 containment：拒 workspace 外 / symlink 逃逸");
   const wsReal = fs.realpathSync(ws);

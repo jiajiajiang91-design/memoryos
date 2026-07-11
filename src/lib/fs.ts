@@ -206,6 +206,7 @@ export async function listProjects(workspace: string): Promise<ProjectMeta[]> {
       createdAt: meta.createdAt ?? new Date().toISOString(),
       updatedAt: meta.updatedAt ?? new Date().toISOString(),
       mcpAutoApply: meta.mcpAutoApply ?? false,
+      entryInjection: meta.entryInjection ?? false,
     }));
   }
   return out;
@@ -506,7 +507,21 @@ export async function readRejectedSuggestions(workspace: string, slug: string): 
   return (await exists(path)) ? await readTextFile(path) : "";
 }
 
-/** 信任模式开关（06-10 用户拍板）：写 project.json 的 mcpAutoApply。 */
+/** 开场注入来源开关（07-04 确认）：写 project.json 的 entryInjection。 */
+export async function setProjectEntryInjection(
+  workspace: string,
+  slug: string,
+  on: boolean
+): Promise<void> {
+  const metaPath = await join(workspace, "projects", slug, "project.json");
+  if (!(await exists(metaPath))) throw new Error(tSync("error.projectNotFound"));
+  const meta = JSON.parse(await readTextFile(metaPath));
+  meta.entryInjection = on;
+  meta.updatedAt = new Date().toISOString();
+  await writeTextFile(metaPath, JSON.stringify(meta, null, 2));
+}
+
+/** 信任模式开关（06-10 用户确认）：写 project.json 的 mcpAutoApply。 */
 export async function setProjectTrustMode(
   workspace: string,
   slug: string,
@@ -521,7 +536,7 @@ export async function setProjectTrustMode(
 }
 
 /**
- * 信任模式自动入库（06-10 用户拍板，PRD·记忆质量升级）：
+ * 信任模式自动入库（06-10 用户确认，PRD·记忆质量升级）：
  * 扫 pending 收件箱，对开了信任模式的项目、来自 MCP 通道的条目自动入库——
  * 卡片提案直接应用（重写整理日期）+ 被替换条目归档 + 对话总结照存 + 条目移 archive(applied)。
  * 安全阀（保持不变的纪律）：
@@ -542,6 +557,34 @@ export async function autoApplyTrustedInbox(workspace: string): Promise<number> 
     if (!meta?.mcpAutoApply) continue;
     // 纵深防御：乱码条目绝不自动入库（server 门禁之外的第二道），留给人工 Review 处置
     if (looksGarbled(inboxHandoffToMarkdown(item.handoff))) continue;
+    // 条目模式（07-11 写入口条目原生化）：新条目直接入库来源保真，调整标记进提案队列
+    const proposedEntries = (item.handoff.proposedEntries ?? "").trim();
+    if (proposedEntries && !/^(none|无|没有)\.?$/i.test(proposedEntries)) {
+      const lib: EntryLib = { kind: "project", slug: item.slug };
+      const cur = await readEntriesLib(workspace, lib);
+      const res = applySessionEntries(cur.entries, proposedEntries, item.slug, today);
+      await writeEntriesLib(workspace, lib, res.entries);
+      if (res.archives.length || res.merges.length) {
+        const sug = await readEntrySuggestions(workspace, lib);
+        await writeEntrySuggestions(workspace, lib, {
+          ...sug,
+          pendingArchives: [
+            ...sug.pendingArchives,
+            ...res.archives.filter(
+              (id) => !sug.pendingArchives.includes(id) && !sug.rejectedArchives.includes(id)
+            ),
+          ],
+          pendingMerges: mergeMergeProposals(
+            sug.pendingMerges,
+            res.merges.filter((p) => !sug.rejectedMerges.includes(mergePairKey(p)))
+          ),
+        });
+      }
+      await saveSession(workspace, item.slug, inboxHandoffToMarkdown(item.handoff));
+      await archiveInboxItem(workspace, filename, "applied");
+      applied++;
+      continue;
+    }
     const proposed = (item.handoff.proposedCards ?? "").trim();
     if (proposed) {
       const cur = await readProjectCards(workspace, item.slug);
@@ -550,15 +593,137 @@ export async function autoApplyTrustedInbox(workspace: string): Promise<number> 
       if (cur.trim() && curStamp && propStamp && curStamp.distilledOn !== propStamp.distilledOn) {
         continue; // 日期不一致：可能盖掉别的会话的更新，降级人工
       }
-      await writeProjectCards(workspace, item.slug, stampCards(proposed, today));
+      const stamped = stampCards(proposed, today);
+      await writeProjectCards(workspace, item.slug, stamped);
       const sup = item.handoff.proposedCardsSuperseded ?? [];
       if (sup.length) await appendDecisionsArchive(workspace, item.slug, sup, today);
+      // 写入闭环：条目库已启用则同步（信任模式路径同样不落下）
+      await syncProjectEntriesFromCards(workspace, item.slug, stamped, sup);
     }
     await saveSession(workspace, item.slug, inboxHandoffToMarkdown(item.handoff));
     await archiveInboxItem(workspace, filename, "applied");
     applied++;
   }
   return applied;
+}
+
+// ── 条目库存储（记忆展示形态第 1 轮：jsonl，一条一行，坏行隔离）────────
+// 三种库平级：项目库 projects/<slug>/entries.jsonl；
+// 全局库 entries/global.jsonl；技能库 entries/skill.jsonl。
+
+import {
+  toJsonl,
+  fromJsonl,
+  syncEntriesWithCards,
+  applySessionEntries,
+  mergeMergeProposals,
+  mergePairKey,
+  EMPTY_SUGGESTIONS,
+  type MemoryEntry,
+  type JsonlParseResult,
+  type EntrySuggestions,
+} from "./entry";
+
+/** 库标识：项目 slug、"global" 全局库、"skill" 技能库。 */
+export type EntryLib = { kind: "project"; slug: string } | { kind: "global" } | { kind: "skill" };
+
+async function entriesFilePath(workspace: string, lib: EntryLib): Promise<string> {
+  if (lib.kind === "project") {
+    return await join(workspace, "projects", lib.slug, "entries.jsonl");
+  }
+  const dir = await join(workspace, "entries");
+  if (!(await exists(dir))) await createDir(dir, { recursive: true });
+  return await join(dir, lib.kind === "global" ? "global.jsonl" : "skill.jsonl");
+}
+
+/** 读一个库。文件不存在返回空库；坏行跳过并报行号，好行不丢。 */
+export async function readEntriesLib(
+  workspace: string,
+  lib: EntryLib
+): Promise<JsonlParseResult> {
+  const path = await entriesFilePath(workspace, lib);
+  if (!(await exists(path))) return { entries: [], badLines: [] };
+  return fromJsonl(await readTextFile(path));
+}
+
+/** 写一个库（覆盖）。原子写：先写 .tmp 再改名，避免读到半写文件。 */
+export async function writeEntriesLib(
+  workspace: string,
+  lib: EntryLib,
+  entries: MemoryEntry[]
+): Promise<void> {
+  const path = await entriesFilePath(workspace, lib);
+  const tmp = path + ".tmp";
+  await writeTextFile(tmp, toJsonl(entries));
+  await renameFile(tmp, path);
+  if (lib.kind === "project") await touchProjectUpdatedAt(workspace, lib.slug);
+}
+
+// 关联提案旁挂文件（07-10 提案走审核）：待确认队列 + 已驳回防复提名单，
+// 提案不进 entries.jsonl，接受才建边。项目库 entry-suggestions.json，
+// 全局/技能库 entries/<kind>.suggestions.json。
+
+async function suggestionsFilePath(workspace: string, lib: EntryLib): Promise<string> {
+  if (lib.kind === "project") {
+    return await join(workspace, "projects", lib.slug, "entry-suggestions.json");
+  }
+  const dir = await join(workspace, "entries");
+  if (!(await exists(dir))) await createDir(dir, { recursive: true });
+  return await join(dir, `${lib.kind}.suggestions.json`);
+}
+
+/** 读一个库的提案文件。不存在或损坏都回空，不阻塞主流程。 */
+export async function readEntrySuggestions(
+  workspace: string,
+  lib: EntryLib
+): Promise<EntrySuggestions> {
+  const path = await suggestionsFilePath(workspace, lib);
+  if (!(await exists(path))) return { ...EMPTY_SUGGESTIONS };
+  try {
+    const obj = JSON.parse(await readTextFile(path));
+    return {
+      pendingRelations: Array.isArray(obj?.pendingRelations) ? obj.pendingRelations : [],
+      rejectedRelations: Array.isArray(obj?.rejectedRelations) ? obj.rejectedRelations : [],
+      pendingMerges: Array.isArray(obj?.pendingMerges) ? obj.pendingMerges : [],
+      rejectedMerges: Array.isArray(obj?.rejectedMerges) ? obj.rejectedMerges : [],
+      pendingArchives: Array.isArray(obj?.pendingArchives) ? obj.pendingArchives : [],
+      rejectedArchives: Array.isArray(obj?.rejectedArchives) ? obj.rejectedArchives : [],
+    };
+  } catch {
+    return { ...EMPTY_SUGGESTIONS };
+  }
+}
+
+/** 写一个库的提案文件（覆盖，原子写同 entries）。 */
+export async function writeEntrySuggestions(
+  workspace: string,
+  lib: EntryLib,
+  s: EntrySuggestions
+): Promise<void> {
+  const path = await suggestionsFilePath(workspace, lib);
+  const tmp = path + ".tmp";
+  await writeTextFile(tmp, JSON.stringify(s, null, 2));
+  await renameFile(tmp, path);
+}
+
+/**
+ * 写入闭环：卡片入库后同步项目条目库。库文件不存在说明还没启用条目库，跳过。
+ * 新行补进、被替代的盖作废归档章、钉住的豁免。返回补进条数，负一表示未启用。
+ */
+export async function syncProjectEntriesFromCards(
+  workspace: string,
+  slug: string,
+  cardsMd: string,
+  superseded: string[] = []
+): Promise<number> {
+  const path = await join(workspace, "projects", slug, "entries.jsonl");
+  if (!(await exists(path))) return -1;
+  const cur = fromJsonl(await readTextFile(path));
+  const today = new Date().toISOString().slice(0, 10);
+  const res = syncEntriesWithCards(cur.entries, cardsMd, slug, today, superseded);
+  if (res.added === 0 && res.archivedCount === 0) return 0;
+  await writeEntriesLib(workspace, { kind: "project", slug }, res.entries);
+  return res.added;
 }
 
 export async function readAboutMe(workspace: string): Promise<string> {

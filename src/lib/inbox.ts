@@ -32,6 +32,8 @@ export function parsedToInboxHandoff(parsed: ParsedHandoff): ParsedHandoff {
     aiSuggestions: parsed.aiSuggestions ?? "",
     proposedCards: parsed.proposedCards ?? "",
     proposedCardsSuperseded: [...(parsed.proposedCardsSuperseded ?? [])],
+    // 条目模式字段（07-11 写入口条目原生化）
+    proposedEntries: parsed.proposedEntries ?? "",
   };
 }
 
@@ -61,8 +63,21 @@ export function inboxHandoffToMarkdown(h: ParsedHandoff): string {
     lines.push("");
   };
 
-  // 现行卡模式（有六卡更新提案）→ 新 5 段版式；否则保持旧 9 段版式。
-  // 两种版式 parseHandoff 都能重新解析（round-trip），extractLatestCompactContext 也都命中。
+  // 条目模式（07-11 写入口条目原生化）→ 条目提案版式；卡片模式 → 5 段版式；
+  // 否则旧 9 段版式。三种 parseHandoff 都能重新解析（round-trip）。
+  if ((h.proposedEntries ?? "").trim()) {
+    section("1. What We Worked On", h.whatWeWorkedOn);
+    section("2. Key Decisions", h.keyDecisions);
+    section("3. AI Suggestions", h.aiSuggestions, "None");
+    section("4. Compact Context for Next Session", h.compactContext);
+    lines.push("## 5. Proposed Memory Entries");
+    lines.push("```markdown");
+    lines.push((h.proposedEntries ?? "").trim());
+    lines.push("```");
+    lines.push("");
+    section("6. Suggested Updates to about_me.md", h.suggestedAboutMeUpdate, "No update needed.");
+    return lines.join("\n").trimEnd() + "\n";
+  }
   if ((h.proposedCards ?? "").trim()) {
     section("1. What We Worked On", h.whatWeWorkedOn);
     section("2. Key Decisions", h.keyDecisions);

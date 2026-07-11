@@ -10,6 +10,15 @@ import {
   compareSessionsDesc,
   extractLatestCompactContext,
 } from "../../src/lib/sessionParse";
+import {
+  fromJsonl,
+  buildInjectionFromEntries,
+  mergeLibsForInjection,
+  searchEntries,
+  KIND_LABELS,
+  SOURCE_LABELS,
+} from "../../src/lib/entry";
+import { scoreEntryAt } from "../../src/lib/weight";
 import type { Session } from "../../src/types";
 
 export type ProjectListEntry = {
@@ -17,7 +26,7 @@ export type ProjectListEntry = {
   name: string;
   currentGoal: string;
   updatedAt: string;
-  /** 信任模式（06-10 用户拍板）：true = app 会把该项目的 MCP 写回自动入库。 */
+  /** 信任模式（06-10 用户确认）：true = app 会把该项目的 MCP 写回自动入库。 */
   mcpAutoApply: boolean;
 };
 
@@ -119,10 +128,48 @@ export async function getProjectMemory(
   if (!match) return null;
 
   const dir = path.join(workspace, "projects", match.slug);
-  const aboutMe = await readTextSafe(path.join(workspace, "about_me.md"));
+  let aboutMe = await readTextSafe(path.join(workspace, "about_me.md"));
   const context = await readTextSafe(path.join(dir, "00_context.md"));
   const decisions = await readTextSafe(path.join(dir, "decisions.md"));
-  const cards = await readTextSafe(path.join(dir, "cards.md"));
+  let cards = await readTextSafe(path.join(dir, "cards.md"));
+
+  // 条目库注入开关（07-04 确认，与 app 复制开场提示词同一逻辑）：
+  // project.json 的 entryInjection 开且条目库有现行条目 → cards 换成按权重拼的条目文本；
+  // 条目库为空或读不到 → 自动回落记忆卡片，MCP 客户端与复制粘贴两条路保持一致。
+  try {
+    const meta = JSON.parse(
+      await readTextSafe(path.join(dir, "project.json")) || "{}"
+    );
+    if (meta.entryInjection) {
+      const lib = fromJsonl(await readTextSafe(path.join(dir, "entries.jsonl")));
+      const active = lib.entries.filter((e) => !e.archived);
+      // 回落规则以项目库为准；有条目时再拼上技能库，与 app 同逻辑（07-10 确认）
+      if (active.length) {
+        const skillLib = fromJsonl(
+          await readTextSafe(path.join(workspace, "entries", "skill.jsonl"))
+        );
+        // 挑选尺子 = app 界面重要度同款合成分，两条读取路径一致
+        const now = Date.now();
+        const inj = buildInjectionFromEntries(
+          mergeLibsForInjection(active, skillLib.entries),
+          undefined,
+          (e) => scoreEntryAt(e, now)
+        );
+        cards = `# 记忆条目 · ${match.name}\n\n${inj.text}`;
+        // 关于我即全局库的 md 版（07-11 确认）：全局库有内容就读它，空则回落 about_me.md
+        const globalLib = fromJsonl(
+          await readTextSafe(path.join(workspace, "entries", "global.jsonl"))
+        );
+        const gActive = globalLib.entries.filter((e) => !e.archived);
+        if (gActive.length) {
+          const gInj = buildInjectionFromEntries(gActive, undefined, (e) => scoreEntryAt(e, now));
+          aboutMe = `# 关于我（记忆条目）\n\n${gInj.text}`;
+        }
+      }
+    }
+  } catch {
+    // 开关读取失败不影响主流程，保持 cards.md 原文
+  }
 
   const sessions: Session[] = [];
   const sessionsDir = path.join(dir, "sessions");
@@ -146,4 +193,115 @@ export async function getProjectMemory(
     latestCompactContext,
     projectName: match.name,
   };
+}
+
+/** 读某项目的条目注入开关（save_session_handoff 按它决定要卡片还是条目）。 */
+export async function getProjectEntryInjection(
+  workspace: string,
+  slug: string
+): Promise<boolean> {
+  try {
+    const meta = JSON.parse(
+      (await readTextSafe(path.join(workspace, "projects", slug, "project.json"))) || "{}"
+    );
+    return !!meta.entryInjection;
+  } catch {
+    return false;
+  }
+}
+
+// ── search_memory：AI 会话中途按需拉取记忆（只读）─────────────────
+// 开场注入是"推"（按权重挑 1200 字），这个是"拉"：注入装不下的、归档的
+// 都能捞。检索逻辑与 app 记忆库页共用 searchEntries（关键词+关联带出+相近兜底）。
+
+export type MemorySearchHit = {
+  /** 命中在哪个库：项目名 / 全局库 / 技能库。 */
+  lib: string;
+  id: string;
+  text: string;
+  /** 中文类型标签，AI 直接可读。 */
+  kinds: string[];
+  source: string;
+  /** keyword 直接命中；related 关联带出；similar 换说法相近。 */
+  match: "keyword" | "related" | "similar";
+  /** 已归档条目照常可搜，标出来让 AI 知道这是旧账。 */
+  archived?: string;
+  /** 三方来源的真实性：已核实/未核实，AI 引用时该有的保留。 */
+  truthiness?: string;
+  /** 关联条目正文带关系类型（[相关]/[同会话]/[取代了]），最多 3 条。 */
+  relatedTexts?: string[];
+  /** 这条已被更新的条目取代，AI 别把它当现行结论引用。 */
+  supersededBy?: string;
+};
+
+const TOTAL_HIT_CAP = 24;
+
+/**
+ * 跨库检索记忆条目。传 projectQuery 搜该项目库+全局库+技能库；
+ * 不传搜全部项目库+全局库+技能库。projectQuery 匹配不到返回 null（同 getProjectMemory）。
+ */
+export async function searchMemory(
+  workspace: string,
+  query: string,
+  projectQuery?: string
+): Promise<{ query: string; hits: MemorySearchHit[]; capped: boolean } | null> {
+  const projects = await listProjects(workspace);
+  let searchProjects = projects;
+  if (projectQuery?.trim()) {
+    const match = matchProject(projects, projectQuery);
+    if (!match) return null;
+    searchProjects = [match];
+  }
+  const libs: { label: string; file: string }[] = [
+    ...searchProjects.map((p) => ({
+      label: p.name,
+      file: path.join(workspace, "projects", p.slug, "entries.jsonl"),
+    })),
+    { label: "全局库", file: path.join(workspace, "entries", "global.jsonl") },
+    { label: "技能库", file: path.join(workspace, "entries", "skill.jsonl") },
+  ];
+  const hits: MemorySearchHit[] = [];
+  const now = Date.now();
+  for (const lib of libs) {
+    const { entries } = fromJsonl(await readTextSafe(lib.file));
+    if (!entries.length) continue;
+    const byId = new Map(entries.map((e) => [e.id, e]));
+    for (const h of searchEntries(entries, query, {
+      maxSimilar: 3,
+      scoreOf: (e) => scoreEntryAt(e, now),
+    })) {
+      const e = h.entry;
+      // 关系类型进输出（知识图谱推演起步）：AI 拿到的不只是"有关"，
+      // 还知道是相关、同会话还是取代关系。
+      const relLabel = (rel: string) =>
+        rel === "supersedes" ? "取代了" : rel === "from_same_session" ? "同会话" : "相关";
+      const relatedTexts = e.relations
+        .slice(0, 3)
+        .map((r) => {
+          const t = byId.get(r.to)?.text;
+          return t ? `[${relLabel(r.rel)}] ${t}` : undefined;
+        })
+        .filter((t): t is string => !!t);
+      // 被取代的旧账明示取代者，防 AI 引旧结论
+      const sup = entries.find((o) =>
+        o.relations.some((r) => r.to === e.id && r.rel === "supersedes")
+      );
+      hits.push({
+        lib: lib.label,
+        id: e.id,
+        text: e.text,
+        kinds: e.kinds.map((k) => KIND_LABELS[k] ?? k),
+        source: SOURCE_LABELS[e.source] ?? e.source,
+        match: h.match,
+        ...(e.archived ? { archived: `已归档(${e.archived.at})` } : {}),
+        ...(e.source === "third_party"
+          ? { truthiness: e.truthiness === "verified" ? "已核实" : "未核实" }
+          : {}),
+        ...(relatedTexts.length ? { relatedTexts } : {}),
+        ...(sup ? { supersededBy: `已被 ${sup.id} 取代：${sup.text}` } : {}),
+      });
+    }
+  }
+  const capped = hits.length > TOTAL_HIT_CAP;
+  return { query, hits: hits.slice(0, TOTAL_HIT_CAP), capped };
 }
