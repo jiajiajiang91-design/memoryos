@@ -278,14 +278,14 @@ export default function EntryLibraryPage(props: Props) {
           </div>
           )
         ) : effectiveView === "user" ? (
-          <div className="max-w-[808px] space-y-8">
+          <div className="w-full space-y-8">
             {readOnly && (
               <div className="px-4 py-2.5 bg-surface-soft border border-hairline rounded-lg text-[13px] text-ink-soft">
                 {t("entryLib.allReadOnly")}
               </div>
             )}
-            <div className="flex gap-2 items-center">
-              <div className="relative flex-1 max-w-[320px]">
+            <div className="flex flex-wrap gap-2 items-center">
+              <div className="relative flex-1 min-w-[180px] max-w-[320px]">
                 <Search size={14} strokeWidth={1.5} className="absolute left-3 top-1/2 -translate-y-1/2 text-ink-faint" />
                 <input
                   value={query}
@@ -328,7 +328,7 @@ export default function EntryLibraryPage(props: Props) {
                 <>
                   <button
                     onClick={() => setAddOpen((v) => !v)}
-                    className="h-9 px-3.5 rounded-lg border border-hairline text-[13px] text-ink-soft inline-flex items-center gap-1.5 hover:text-ink hover:border-slate/40 transition-colors"
+                    className="h-9 px-3.5 rounded-lg border border-hairline text-[13px] text-ink-soft inline-flex items-center gap-1.5 whitespace-nowrap shrink-0 hover:text-ink hover:border-slate/40 transition-colors"
                   >
                     <Plus size={14} strokeWidth={1.5} /> {t("entryLib.addEntry")}
                   </button>
@@ -336,33 +336,33 @@ export default function EntryLibraryPage(props: Props) {
                     <button
                       onClick={props.onCollectSkills}
                       title={t("entryLib.collectSkillsHint")}
-                      className="h-9 px-3.5 rounded-lg border border-hairline text-[13px] text-ink-soft inline-flex items-center gap-1.5 hover:text-ink hover:border-slate/40 transition-colors"
+                      className="h-9 px-3.5 rounded-lg border border-hairline text-[13px] text-ink-soft inline-flex items-center gap-1.5 whitespace-nowrap shrink-0 hover:text-ink hover:border-slate/40 transition-colors"
                     >
                       <FolderInput size={14} strokeWidth={1.5} /> {t("entryLib.collectSkills")}
                     </button>
                   )}
                   <button
                     onClick={props.onExportMd}
-                    className="h-9 px-3.5 rounded-lg border border-hairline text-[13px] text-ink-soft inline-flex items-center gap-1.5 hover:text-ink hover:border-slate/40 transition-colors"
+                    className="h-9 px-3.5 rounded-lg border border-hairline text-[13px] text-ink-soft inline-flex items-center gap-1.5 whitespace-nowrap shrink-0 hover:text-ink hover:border-slate/40 transition-colors"
                   >
                     <Download size={14} strokeWidth={1.5} /> {t("entryLib.exportMd")}
                   </button>
                   <button
                     onClick={() => setImportOpen((v) => !v)}
-                    className="h-9 px-3.5 rounded-lg border border-hairline text-[13px] text-ink-soft inline-flex items-center gap-1.5 hover:text-ink hover:border-slate/40 transition-colors"
+                    className="h-9 px-3.5 rounded-lg border border-hairline text-[13px] text-ink-soft inline-flex items-center gap-1.5 whitespace-nowrap shrink-0 hover:text-ink hover:border-slate/40 transition-colors"
                   >
                     <Upload size={14} strokeWidth={1.5} /> {t("entryLib.importMd")}
                   </button>
                   <button
                     onClick={props.onCopyRefinePrompt}
-                    className="h-9 px-3.5 rounded-lg border border-hairline text-[13px] text-ink-soft inline-flex items-center gap-1.5 hover:text-ink hover:border-slate/40 transition-colors"
+                    className="h-9 px-3.5 rounded-lg border border-hairline text-[13px] text-ink-soft inline-flex items-center gap-1.5 whitespace-nowrap shrink-0 hover:text-ink hover:border-slate/40 transition-colors"
                   >
                     <Sparkles size={14} strokeWidth={1.5} /> {t("entryLib.refinePrompt")}
                   </button>
                   <button
                     onClick={props.onFindDuplicates}
                     title={t("entryLib.findDupHint")}
-                    className="h-9 px-3.5 rounded-lg border border-hairline text-[13px] text-ink-soft inline-flex items-center gap-1.5 hover:text-ink hover:border-slate/40 transition-colors"
+                    className="h-9 px-3.5 rounded-lg border border-hairline text-[13px] text-ink-soft inline-flex items-center gap-1.5 whitespace-nowrap shrink-0 hover:text-ink hover:border-slate/40 transition-colors"
                   >
                     <Layers size={14} strokeWidth={1.5} /> {t("entryLib.findDup")}
                   </button>
@@ -777,7 +777,7 @@ export default function EntryLibraryPage(props: Props) {
             onAcceptAllRelations={props.onAcceptAllRelations}
           />
         ) : (
-          <div className="max-w-[808px]">
+          <div className="w-full">
             <div className="mb-3 flex items-center gap-3 text-[13px] text-ink-soft">
               <span className="font-display">{t("entryLib.charCount", { n: injection.charCount })}</span>
               {injection.droppedIds.length > 0 && (
@@ -1063,7 +1063,7 @@ function GraphView(props: {
     rel === "supersedes" ? "#B4491E" : "#002FA7";
 
   return (
-    <div className="max-w-[808px]">
+    <div className="w-full">
       {!props.readOnly && (
         <ProposalPanel
           entries={props.entries}
