@@ -57,6 +57,7 @@ import {
   mergeMergeProposals,
   mergePairKey,
   extractAdjustProposals,
+  applySessionEntries,
   EMPTY_SUGGESTIONS,
   skillCandidates,
   mergeLibsForInjection,
@@ -446,8 +447,37 @@ export default function App() {
     const aiSugs = suggestions.filter((x) => x.targetFile === "ai-suggestion");
     const adopted = aiSugs.filter((x) => x.selected && !x.rejected).map((x) => x.content);
     const cardsSug = suggestions.find((x) => x.targetFile === "cards.md");
+    const entriesSug = suggestions.find((x) => x.targetFile === "entries");
 
-    if (cardsSug?.selected && cardsSug.content) {
+    // ── 条目模式（07-11 写入口条目原生化）：新记忆条目直接入库来源保真，
+    //    !归档 !并入 变提案二次确认；采纳的 AI 建议成决策类条目 ──
+    if (entriesSug?.selected && entriesSug.content) {
+      const lib: EntryLib = { kind: "project", slug };
+      const cur = await readEntriesLib(workspace, lib);
+      let md = entriesSug.content;
+      for (const line of adopted) {
+        md += `\n- ${line} #决策 @AI建议`;
+      }
+      const res = applySessionEntries(cur.entries, md, slug, today);
+      await writeEntriesLib(workspace, lib, res.entries);
+      if (res.archives.length || res.merges.length) {
+        const sug = await readEntrySuggestions(workspace, lib);
+        await writeEntrySuggestions(workspace, lib, {
+          ...sug,
+          pendingArchives: [
+            ...sug.pendingArchives,
+            ...res.archives.filter(
+              (id) => !sug.pendingArchives.includes(id) && !sug.rejectedArchives.includes(id)
+            ),
+          ],
+          pendingMerges: mergeMergeProposals(
+            sug.pendingMerges,
+            res.merges.filter((p) => !sug.rejectedMerges.includes(mergePairKey(p)))
+          ),
+        });
+      }
+      saved++;
+    } else if (cardsSug?.selected && cardsSug.content) {
       // 一键整理：提案（+采纳的建议）落盘，重写整理日期，被替换条目盖作废章入决策档案
       let content = adoptSuggestionsIntoCards(cardsSug.content, adopted, today, lang);
       content = stampCards(content, today, lang);
@@ -474,7 +504,7 @@ export default function App() {
       if (s.id === "save-session") {
         await saveSession(workspace, slug, review.raw);
         saved++;
-      } else if (s.targetFile === "cards.md" || s.targetFile === "ai-suggestion") {
+      } else if (s.targetFile === "cards.md" || s.targetFile === "ai-suggestion" || s.targetFile === "entries") {
         continue; // 上面已处理
       } else if (s.targetFile && s.content) {
         if (s.mode === "replace") {

@@ -44,6 +44,33 @@ function extract(text: string, heading: string): string {
  * 会把它切碎，所以要求 AI 放在 ``` 围栏代码块里，这里手工定位围栏边界。
  * 返回 { cards: 围栏内全文, tail: 围栏后的剩余文本（供扫 Superseded 行） }。
  */
+/** 通用：定位某标题后的 ``` 围栏代码块。cards 提案和条目提案共用。 */
+function extractFencedBlock(
+  raw: string,
+  headings: string[]
+): { body: string; tail: string } {
+  for (const h of headings) {
+    const escaped = h.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const hm = raw.match(
+      new RegExp(
+        `(?:^|\\n)[ \\t]*(?:#{1,3}\\s*(?:\\d+\\.?\\s+)?|\\*\\*\\s*(?:\\d+\\.?\\s+)?)?${escaped}`,
+        "i"
+      )
+    );
+    if (!hm || hm.index === undefined) continue;
+    const after = raw.slice(hm.index + hm[0].length);
+    const fenceOpen = after.match(/```(?:markdown|md)?[ \t]*\n/);
+    if (!fenceOpen || fenceOpen.index === undefined) continue;
+    const bodyStart = fenceOpen.index + fenceOpen[0].length;
+    const fenceClose = after.slice(bodyStart).indexOf("\n```");
+    if (fenceClose === -1) continue;
+    const body = after.slice(bodyStart, bodyStart + fenceClose).trim();
+    const tail = after.slice(bodyStart + fenceClose + 4, bodyStart + fenceClose + 4 + 2000);
+    return { body, tail };
+  }
+  return { body: "", tail: "" };
+}
+
 function extractCardsProposal(raw: string): { cards: string; tail: string } {
   const headings = [
     "Proposed cards.md Update",
@@ -89,6 +116,12 @@ export function parseHandoff(raw: string): ParsedHandoff {
     if (t) metadata["Source Tool"] = t;
   }
   const proposal = extractCardsProposal(raw);
+  // 条目模式提案（07-11 写入口条目原生化）：新记忆条目行的围栏代码块
+  const entriesProposal = extractFencedBlock(raw, [
+    "Proposed Memory Entries",
+    "记忆条目更新",
+    "新记忆条目",
+  ]);
   return {
     metadata,
     whatWeWorkedOn:
@@ -128,6 +161,7 @@ export function parseHandoff(raw: string): ParsedHandoff {
       extract(raw, "建议待确认"),
     proposedCards: proposal.cards,
     proposedCardsSuperseded: proposal.cards ? extractSuperseded(proposal.tail) : [],
+    proposedEntries: entriesProposal.body,
   };
 }
 
@@ -767,6 +801,8 @@ export function buildEndSessionPrompt(opts: {
   latestSession: string;
   /** 现行卡全文。非空 = 现行卡模式：生成四栏交接 + 六卡更新提案（PRD·记忆质量升级 F1）。 */
   cards?: string;
+  /** 当前条目库导出 md。非空 = 条目模式（07-11 写入口条目原生化）：AI 直接产条目行，优先于卡片模式。 */
+  entriesMd?: string;
   /** 用户在 CopyPromptModal 选的来源工具，预填进 handoff 的 Metadata。 */
   sourceTool?: string;
   lang?: Lang;
@@ -776,6 +812,129 @@ export function buildEndSessionPrompt(opts: {
   const sourceToolLine = opts.sourceTool?.trim()
     ? `- Source Tool: ${opts.sourceTool.trim()}`
     : `- Source Tool:`;
+
+  // ── 条目模式（07-11 写入口条目原生化）：AI 直接产记忆条目行，来源类型全保真 ──
+  if (opts.entriesMd?.trim()) {
+    const zhBody = `你现在需要根据我们本轮对话，生成一份 MemoryOS Session Handoff（记忆条目模式）。
+
+规则：
+1. 不要复述完整聊天记录，只保留下次继续工作真正需要的信息。
+2. 第 2 节只收我**明确确认**的决定，每条附我的原话（或紧贴转述）+ 日期。
+3. 禁止把建议、推测、未经我确认的计划写入第 1、2 节；不确定归属时一律放第 3 节。
+4. 不要编造本轮对话中没有出现的信息。
+5. 严格使用下方 Markdown 格式——我的 App 按标题解析（每节 \`## 数字. 标题\`，标题保持英文原文）。
+
+---
+
+# MemoryOS Session Handoff
+
+## Metadata
+- Date:
+${sourceToolLine}
+- Project: ${opts.projectName}
+- Session Goal:
+
+## 1. What We Worked On
+（只写已发生的事实，过去时，3-6 条）
+
+## 2. Key Decisions
+（只收我明确确认的，每条格式：）
+- Decision: …
+  - Date: …
+  - Quote: 「我的原话或紧贴转述」
+
+## 3. AI Suggestions
+（你认为该做但我**没有确认**的，全部放这里，每条一行；没有就写 "None"）
+
+## 4. Compact Context for Next Session
+（150-250 字：上次做了什么 / 确认了什么 / 本次建议起点；待办只列我确认过的）
+
+## 5. Proposed Memory Entries
+把本轮值得记住的新记忆放在 markdown 代码块里输出，一行一条，格式固定：
+
+- 正文 #类型 @来源
+
+规则：
+- 类型从八类挑，可多个：#决策 #约束 #状态 #交接 #事实 #偏好 #技能 #零散
+- 来源如实标：我确认过的标 @用户，你自己的建议标 @AI建议，你推断出来的标 @AI推论，来自外部资料的标 @三方
+- 新行**不要带编号**，编号由 App 发
+- 对照下方「当前记忆条目」：已有的不要重写；某条已过时就引用它的编号加标记，如 \`- [m-0012] 原正文 !归档\`；两条重复在该保留的那条编号行尾加 \`!并入\` 另一条编号
+- 没有值得记的就只写 "None"
+
+## 6. Suggested Updates to about_me.md
+（仅当本轮出现明确、长期、稳定的用户偏好时才写；否则写 "No update needed."）
+
+---
+
+以下是当前项目上下文：
+
+## 当前记忆条目
+${opts.entriesMd}
+
+## 最近一次对话总结
+${opts.latestSession}
+`;
+    const enBody = `Based on our conversation, generate a MemoryOS Session Handoff (memory-entries mode).
+
+Rules:
+1. Don't rehash the transcript — keep only what the next session truly needs.
+2. Section 2 accepts ONLY decisions I explicitly confirmed, each with my quote (or close paraphrase) + date.
+3. NEVER put suggestions, guesses, or unconfirmed plans into sections 1 or 2. When unsure, it goes to section 3.
+4. Don't invent anything that wasn't in this conversation.
+5. Use the exact Markdown structure below — my app parses your output by these headings (\`## N. Title\`, keep the English titles).
+
+---
+
+# MemoryOS Session Handoff
+
+## Metadata
+- Date:
+${sourceToolLine}
+- Project: ${opts.projectName}
+- Session Goal:
+
+## 1. What We Worked On
+(Facts only — past tense, 3-6 bullets)
+
+## 2. Key Decisions
+(ONLY what I explicitly confirmed. Format per entry:)
+- Decision: …
+  - Date: …
+  - Quote: "my words or a close paraphrase"
+
+## 3. AI Suggestions
+(Everything you think we should do but I did NOT confirm — one per line. Write "None" if empty.)
+
+## 4. Compact Context for Next Session
+(150-250 words: what we did / what was confirmed / suggested starting point.)
+
+## 5. Proposed Memory Entries
+Output this session's new memories inside a markdown code fence, one per line:
+
+- text #type @source
+
+Rules:
+- Types (multiple allowed): #决策 #约束 #状态 #交接 #事实 #偏好 #技能 #零散
+- Source honestly: @用户 for things I confirmed, @AI建议 for your suggestions, @AI推论 for your inferences, @三方 for external material
+- New lines must NOT carry an id — the app assigns them
+- Against the "Current memory entries" below: don't rewrite existing ones; mark an outdated entry by its id like \`- [m-0012] original text !归档\`; for duplicates add \`!并入\` + the other id on the line to keep
+- Write "None" if nothing is worth keeping
+
+## 6. Suggested Updates to about_me.md
+(ONLY if a clear, stable, long-term preference surfaced; otherwise "No update needed.")
+
+---
+
+Current project context:
+
+## Current memory entries
+${opts.entriesMd}
+
+## Latest session summary
+${opts.latestSession}
+`;
+    return lang === "en" ? enBody : zhBody;
+  }
 
   // ── 现行卡模式 ──
   if (opts.cards?.trim()) {

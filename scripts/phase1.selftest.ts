@@ -211,5 +211,49 @@ ok(!/[:]/.test(s1) && !/[:]/.test(s2), "session 文件名无冒号");
 
 fs.rmSync(ws, { recursive: true, force: true });
 
+console.log("\n[C] 条目模式 handoff（07-11 写入口条目原生化）：解析 → 渲染 → 再解析闭环");
+const entriesRaw = `# MemoryOS Session Handoff
+
+## Metadata
+- Date: 2026-07-11
+- Source Tool: Claude
+- Project: 测试项目
+
+## 1. What We Worked On
+- 做了写入口条目原生化
+
+## 2. Key Decisions
+- Decision: 写入口跟条目注入开关走
+  - Date: 2026-07-11
+
+## 3. AI Suggestions
+None
+
+## 4. Compact Context for Next Session
+写入口条目原生化完成，下次试用。
+
+## 5. Proposed Memory Entries
+\`\`\`markdown
+- 本轮确认了写入口条目原生化 #决策 @用户
+- 建议试用一轮再并主干 #决策 @AI建议
+- [m-0002] 过时状态 !归档
+\`\`\`
+
+## 6. Suggested Updates to about_me.md
+No update needed.
+`;
+const pe = parseHandoff(entriesRaw);
+ok((pe.proposedEntries ?? "").includes("写入口条目原生化 #决策 @用户"), "parseHandoff 抓到条目提案围栏");
+ok((pe.proposedEntries ?? "").includes("!归档"), "调整标记原样保留");
+ok(!(pe.proposedCards ?? "").trim(), "条目模式不误认成卡片提案");
+const peHandoff = parsedToInboxHandoff(pe);
+eq(peHandoff.proposedEntries, pe.proposedEntries, "parsedToInboxHandoff 带上条目提案");
+const peMd = inboxHandoffToMarkdown(peHandoff);
+ok(peMd.includes("## 5. Proposed Memory Entries"), "渲染出条目提案段");
+const peAgain = parseHandoff(peMd);
+eq(peAgain.proposedEntries, pe.proposedEntries, "条目提案 round-trip 一致");
+eq(peAgain.compactContext, pe.compactContext, "条目版式 compactContext round-trip 一致");
+ok(/##\s*(?:9|4)\.\s*Compact Context/.test(peMd), "条目版式 Compact Context 段渲染在位");
+
 console.log(`\n结果：${pass} passed, ${fail} failed\n`);
 process.exit(fail ? 1 : 0);

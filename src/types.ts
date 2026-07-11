@@ -54,6 +54,8 @@ export type ParsedHandoff = {
   proposedCards?: string;
   /** 提案中被替换/移除的旧条目描述（Review 划线高亮用）。 */
   proposedCardsSuperseded?: string[];
+  /** 条目模式（07-11 写入口条目原生化）：本轮新记忆条目行 + !归档 !并入 调整标记。 */
+  proposedEntries?: string;
 };
 
 // ── Memory Inbox（PRD v0.3.1 §4.2）─────────────────────

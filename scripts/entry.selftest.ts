@@ -23,6 +23,7 @@ import {
   mergePairKey,
   extractAdjustProposals,
   buildRefinePrompt,
+  applySessionEntries,
   skillCandidates,
   mergeLibsForInjection,
   similarityScore,
@@ -514,6 +515,39 @@ console.log("\n[W] 告诉 AI 改：!归档 !并入 标记变提案");
   const clean = exportToMarkdown(cur);
   ok(!clean.includes("!"), "导出不含调整标记");
   eq(reconcileImport(cur, parseMarkdown(clean)).updates.length, 0, "带新字段的解析往返不误报更新");
+}
+
+console.log("\n[X] 写入口条目原生化 applySessionEntries");
+{
+  const cur = [
+    mk({ id: "m-0001", text: "已有的旧决策", kinds: ["decision"] }),
+    mk({ id: "m-0002", text: "过时的状态记录", kinds: ["state"] }),
+  ];
+  const md = [
+    "- 本轮确认了新的发布节奏 #决策 @用户",
+    "- 建议下轮做全局库注入 #决策 @AI建议",
+    "- 推断她偏好精简输出 #偏好 @AI推论 ->m-0001",
+    "- 已有的旧决策 #决策 @用户",
+    "- [m-0002] 过时的状态记录 !归档",
+    "- [m-0001] 已有的旧决策 !并入m-0002",
+  ].join("\n");
+  const r = applySessionEntries(cur, md, "proj", "2026-07-11");
+  eq(r.added, 3, "三条新行入库，重复正文跳过");
+  const n1 = r.entries.find((e) => e.text === "本轮确认了新的发布节奏")!;
+  const n2 = r.entries.find((e) => e.text === "建议下轮做全局库注入")!;
+  const n3 = r.entries.find((e) => e.text === "推断她偏好精简输出")!;
+  eq(n1.source, "user", "来源保真：用户");
+  eq(n2.source, "ai_suggestion", "来源保真：AI建议");
+  eq(n3.source, "ai_inference", "来源保真：AI推论");
+  eq(n1.id, "m-0003", "从现有最大号续发");
+  eq(n3.relations.some((x) => x.to === "m-0001"), true, "箭头指向现有条目保留");
+  ok(n2.relations.some((x) => x.rel === "from_same_session" && x.to === n1.id), "同批新条目链式互联");
+  eq(r.archives, ["m-0002"], "!归档 标记变提案");
+  eq(r.merges, [{ keep: "m-0001", drop: "m-0002" }], "!并入 标记变合并提案");
+  ok(!r.entries.find((e) => e.id === "m-0002")!.archived, "提案未确认前条目不动");
+  // 空提案和 None
+  eq(applySessionEntries(cur, "None", "proj", "2026-07-11").added, 0, "None 不产条目");
+  eq(applySessionEntries(cur, "", "proj", "2026-07-11").added, 0, "空串不产条目");
 }
 
 console.log(`\n结果：${pass} passed, ${fail} failed\n`);

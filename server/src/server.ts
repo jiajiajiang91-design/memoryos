@@ -8,7 +8,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { looksGarbled } from "../../src/lib/inbox";
 import { normalizeSourceTool } from "../../src/lib/sourceTools";
-import { listProjects, getProjectMemory, matchProject, searchMemory } from "./workspace";
+import { listProjects, getProjectMemory, matchProject, searchMemory, getProjectEntryInjection } from "./workspace";
 import { buildInboxItem, writeInboxItem } from "./inbox";
 import { buildStartSessionToolPrompt, buildEndSessionToolPrompt } from "./prompts";
 import { logServerEvent } from "./telemetry";
@@ -201,6 +201,14 @@ export function createServer(workspace: string): McpServer {
           .array(z.string())
           .optional()
           .describe("记忆卡片模式：新版里被替换/移除的旧条目，每条一句话描述（入库时盖作废章进决策历史）"),
+        proposedEntries: z
+          .string()
+          .optional()
+          .describe(
+            "条目模式（项目开了条目注入时**必传**，代替 proposedCards）：本轮新记忆，一行一条，格式 `- 正文 #类型 @来源`。" +
+              "类型八类可多个（#决策 #约束 #状态 #交接 #事实 #偏好 #技能 #零散）；来源如实标（用户确认的 @用户、你的建议 @AI建议、你的推断 @AI推论、外部资料 @三方）；" +
+              "新行不带编号。已有条目过时就引用其编号标 !归档（如 `- [m-0012] 原正文 !归档`），重复的在保留行尾标 !并入 加编号。没有值得记的写 None。"
+          ),
       },
     },
     async (input) => {
@@ -224,10 +232,36 @@ export function createServer(workspace: string): McpServer {
           isError: true,
         };
       }
+      // 条目模式契约（07-11 写入口条目原生化）：项目开了条目注入 → 必传 proposedEntries，
+      // 写入不再经六卡降级翻译。缺了退回并教它怎么补。
+      const entriesMode = await getProjectEntryInjection(workspace, match.slug);
+      if (entriesMode && !input.proposedEntries?.trim()) {
+        await logServerEvent("push_to_inbox", {
+          sourceClient: clientName(),
+          project: match.name,
+          staged: false,
+          reason: "missing_proposedEntries",
+        });
+        await recordActivity("save_session_handoff", match.name);
+        return {
+          content: [
+            {
+              type: "text",
+              text:
+                `未暂存：项目「${match.name}」使用记忆条目模式，缺少 proposedEntries。请这样补全后重新调用 save_session_handoff：\n` +
+                `1. 把本轮值得记住的新记忆整理成一行一条：\`- 正文 #类型 @来源\`（类型八类可多个：#决策 #约束 #状态 #交接 #事实 #偏好 #技能 #零散；来源如实标：@用户 @AI建议 @AI推论 @三方；新行不带编号）；\n` +
+                `2. 本轮发现某条现有记忆过时/重复的（编号可从 search_memory 命中里拿），加调整行：\`- [编号] 原正文 !归档\` 或在保留行尾加 !并入 加另一条编号；\n` +
+                `3. 没有值得记的就传 "None"。proposedCards 不需要传。`,
+            },
+          ],
+          isError: true,
+          structuredContent: { staged: false, reason: "missing_proposedEntries" },
+        };
+      }
       // 工具契约强制（真实 bug：用户只说"保存对话"、不走 end_session 指令时，AI 按最省事的
       // 必填字段调用 → 旧格式交接，没有卡片更新）。指令只能劝，契约才能管：缺 proposedCards
       // 一律退回并教它怎么补，确保任何措辞触发的保存都走记忆卡片管线。
-      if (!input.proposedCards?.trim()) {
+      if (!entriesMode && !input.proposedCards?.trim()) {
         await logServerEvent("push_to_inbox", {
           sourceClient: clientName(),
           project: match.name,
@@ -255,6 +289,7 @@ export function createServer(workspace: string): McpServer {
       // 否则信任模式会把 1799 个问号自动写进用户的记忆卡片。
       const combined = [
         input.proposedCards,
+        input.proposedEntries,
         input.whatWeWorkedOn,
         input.keyDecisions,
         input.compactContext,
@@ -348,14 +383,22 @@ export function createServer(workspace: string): McpServer {
         "指示模型把本轮对话整理成结构化 handoff 并调用 save_session_handoff（产物是工具调用，不是粘贴 Markdown）。",
       argsSchema: { project: z.string().optional() },
     },
-    ({ project }) => ({
-      messages: [
-        {
-          role: "user",
-          content: { type: "text", text: buildEndSessionToolPrompt(project) },
-        },
-      ],
-    })
+    async ({ project }) => {
+      // 项目开了条目注入 → 结束指令走条目模式（产条目行，不产六卡提案）
+      let entriesMode = false;
+      if (project?.trim()) {
+        const match = matchProject(await listProjects(workspace), project);
+        if (match) entriesMode = await getProjectEntryInjection(workspace, match.slug);
+      }
+      return {
+        messages: [
+          {
+            role: "user" as const,
+            content: { type: "text" as const, text: buildEndSessionToolPrompt(project, entriesMode) },
+          },
+        ],
+      };
+    }
   );
 
   return server;

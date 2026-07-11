@@ -186,6 +186,21 @@ export async function getProjectMemory(
   };
 }
 
+/** 读某项目的条目注入开关（save_session_handoff 按它决定要卡片还是条目）。 */
+export async function getProjectEntryInjection(
+  workspace: string,
+  slug: string
+): Promise<boolean> {
+  try {
+    const meta = JSON.parse(
+      (await readTextSafe(path.join(workspace, "projects", slug, "project.json"))) || "{}"
+    );
+    return !!meta.entryInjection;
+  } catch {
+    return false;
+  }
+}
+
 // ── search_memory：AI 会话中途按需拉取记忆（只读）─────────────────
 // 开场注入是"推"（按权重挑 1200 字），这个是"拉"：注入装不下的、归档的
 // 都能捞。检索逻辑与 app 记忆库页共用 searchEntries（关键词+关联带出+相近兜底）。

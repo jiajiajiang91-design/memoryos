@@ -798,6 +798,75 @@ export function buildRefinePrompt(exportedMd: string): string {
 ${exportedMd}`;
 }
 
+// ── 写入口条目原生化（07-11 确认，六卡正式迁移）────────────────────
+// 结束对话的 AI 直接产条目行（- 正文 #类型 @来源），review 确认后从这里入库：
+// 新行发号带真实来源类型，!归档 !并入 标记变提案等二次确认。来源类型全保真，
+// 不再经六卡降级翻译。cards 管线保留给未开条目注入的项目。
+
+export type SessionEntriesResult = {
+  entries: MemoryEntry[];
+  added: number;
+  /** 同批新条目的编号（同会话隐式边已建）。 */
+  addedIds: string[];
+  /** AI 标了 !归档 的现有条目，走提案确认。 */
+  archives: string[];
+  /** AI 标了 !并入 的合并建议，走提案确认。 */
+  merges: MergeProposal[];
+};
+
+/**
+ * 把对话总结里的条目提案并进库。没编号的行 = 新记忆：发号、来源类型
+ * 照行内标签保真（缺省用户/零散）、关联照箭头、同批链式互联（同会话隐式边）；
+ * 正文与现行条目重复的跳过。带编号的行只取 !归档 !并入 标记变提案，
+ * 正文改动不走这条通道（改正文用导出导回对账）。
+ */
+export function applySessionEntries(
+  current: MemoryEntry[],
+  proposedMd: string,
+  scope: EntryScope,
+  now: string
+): SessionEntriesResult {
+  const parsed = parseMarkdown(proposedMd);
+  const have = new Set(current.filter((e) => !e.archived).map((e) => normText(e.text)));
+  const counter: { id: string }[] = [...current];
+  const out: MemoryEntry[] = [...current];
+  const addedIds: string[] = [];
+  for (const p of parsed) {
+    if (p.id) continue; // 带编号的行只贡献调整标记，下面统一提取
+    if (have.has(normText(p.text))) continue;
+    const id = nextEntryId(counter);
+    counter.push({ id });
+    out.push({
+      id,
+      text: p.text,
+      kinds: p.kinds.length ? p.kinds : ["misc"],
+      scopes: [scope],
+      source: p.source ?? "user",
+      modality: "text",
+      relations: p.relTargets
+        .filter((to) => current.some((e) => e.id === to))
+        .map((to) => ({ to, rel: "related" as const })),
+      createdAt: now,
+      updatedAt: now,
+    });
+    addedIds.push(id);
+    have.add(normText(p.text));
+  }
+  // 同会话隐式边：同批新条目链式互联（与卡片同步的规则一致）
+  if (addedIds.length > 1) {
+    const idSet = new Set(addedIds);
+    for (const e of out) {
+      if (!idSet.has(e.id)) continue;
+      const idx = addedIds.indexOf(e.id);
+      if (idx > 0) {
+        e.relations = [...e.relations, { to: addedIds[idx - 1], rel: "from_same_session" }];
+      }
+    }
+  }
+  const adj = extractAdjustProposals(parsed, current);
+  return { entries: out, added: addedIds.length, addedIds, archives: adj.archives, merges: adj.merges };
+}
+
 // ── 写入闭环：卡片入库后同步条目库（机械第一版）───────────────────
 // 新对话总结写进 cards.md 后调用：卡片里的新行补进条目库，被替代的旧条目
 // 盖作废归档章。不动用户手动调过的档位、钉住和已有条目，钉住的豁免自动归档。

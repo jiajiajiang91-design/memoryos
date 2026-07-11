@@ -557,6 +557,34 @@ export async function autoApplyTrustedInbox(workspace: string): Promise<number> 
     if (!meta?.mcpAutoApply) continue;
     // 纵深防御：乱码条目绝不自动入库（server 门禁之外的第二道），留给人工 Review 处置
     if (looksGarbled(inboxHandoffToMarkdown(item.handoff))) continue;
+    // 条目模式（07-11 写入口条目原生化）：新条目直接入库来源保真，调整标记进提案队列
+    const proposedEntries = (item.handoff.proposedEntries ?? "").trim();
+    if (proposedEntries && !/^(none|无|没有)\.?$/i.test(proposedEntries)) {
+      const lib: EntryLib = { kind: "project", slug: item.slug };
+      const cur = await readEntriesLib(workspace, lib);
+      const res = applySessionEntries(cur.entries, proposedEntries, item.slug, today);
+      await writeEntriesLib(workspace, lib, res.entries);
+      if (res.archives.length || res.merges.length) {
+        const sug = await readEntrySuggestions(workspace, lib);
+        await writeEntrySuggestions(workspace, lib, {
+          ...sug,
+          pendingArchives: [
+            ...sug.pendingArchives,
+            ...res.archives.filter(
+              (id) => !sug.pendingArchives.includes(id) && !sug.rejectedArchives.includes(id)
+            ),
+          ],
+          pendingMerges: mergeMergeProposals(
+            sug.pendingMerges,
+            res.merges.filter((p) => !sug.rejectedMerges.includes(mergePairKey(p)))
+          ),
+        });
+      }
+      await saveSession(workspace, item.slug, inboxHandoffToMarkdown(item.handoff));
+      await archiveInboxItem(workspace, filename, "applied");
+      applied++;
+      continue;
+    }
     const proposed = (item.handoff.proposedCards ?? "").trim();
     if (proposed) {
       const cur = await readProjectCards(workspace, item.slug);
@@ -583,7 +611,18 @@ export async function autoApplyTrustedInbox(workspace: string): Promise<number> 
 // 三种库平级：项目库 projects/<slug>/entries.jsonl；
 // 全局库 entries/global.jsonl；技能库 entries/skill.jsonl。
 
-import { toJsonl, fromJsonl, syncEntriesWithCards, EMPTY_SUGGESTIONS, type MemoryEntry, type JsonlParseResult, type EntrySuggestions } from "./entry";
+import {
+  toJsonl,
+  fromJsonl,
+  syncEntriesWithCards,
+  applySessionEntries,
+  mergeMergeProposals,
+  mergePairKey,
+  EMPTY_SUGGESTIONS,
+  type MemoryEntry,
+  type JsonlParseResult,
+  type EntrySuggestions,
+} from "./entry";
 
 /** 库标识：项目 slug、"global" 全局库、"skill" 技能库。 */
 export type EntryLib = { kind: "project"; slug: string } | { kind: "global" } | { kind: "skill" };

@@ -111,6 +111,21 @@ fs.writeFileSync(
   path.join(ws, "entries", "skill.jsonl"),
   entry("m-0001", "写周报的固定套路先列结论", ["skill"]).replace('"demo-proj"', '"skill"') + "\n"
 );
+// 条目模式 fixture：开了 entryInjection 的项目（save_session_handoff 契约按开关切换）
+const entryProjDir = path.join(ws, "projects", "entry-proj");
+fs.mkdirSync(entryProjDir, { recursive: true });
+fs.writeFileSync(
+  path.join(entryProjDir, "project.json"),
+  JSON.stringify({
+    name: "条目项目",
+    currentGoal: "试条目写入",
+    currentGoalBullets: [],
+    createdAt: "2026-07-11T00:00:00.000Z",
+    updatedAt: "2026-07-11T00:00:00.000Z",
+    entryInjection: true,
+  }, null, 2)
+);
+fs.writeFileSync(path.join(entryProjDir, "entries.jsonl"), entry("m-0001", "条目项目的现有记忆", ["fact"]).replace('"demo-proj"', '"entry-proj"') + "\n");
 
 // 埋点写到临时目录，便于断言（覆盖 appData 推断）。telemetry / mcp_state 都不许进 workspace 正式区。
 const telemetryDir = fs.mkdtempSync(path.join(os.tmpdir(), "memoryos-telemetry-"));
@@ -143,6 +158,7 @@ async function run() {
   const projects = await listProjects(ws);
   eq(projects, [
     { slug: "demo-proj", name: "Demo 项目", currentGoal: "跑通 MCP pull", updatedAt: "2026-06-01T10:30:00.000Z", mcpAutoApply: false },
+    { slug: "entry-proj", name: "条目项目", currentGoal: "试条目写入", updatedAt: "2026-07-11T00:00:00.000Z", mcpAutoApply: false },
   ], "list_projects 输出 = project.json 原值（slug/name/currentGoal/updatedAt/mcpAutoApply）");
 
   const mem = await getProjectMemory(ws, "demo-proj");
@@ -324,8 +340,8 @@ async function run() {
   eq(item.handoff.whatWeWorkedOn, saveInput.whatWeWorkedOn, "handoff.whatWeWorkedOn 对齐入参");
   eq(item.handoff.compactContext, saveInput.compactContext, "handoff.compactContext 对齐入参");
   eq(item.handoff.suggestedDecisionsUpdate, "", "未传的 suggested 字段补空串（对齐 ParsedHandoff）");
-  // 13 = 旧 10 字段 + 现行卡模式 3 字段（aiSuggestions / proposedCards / proposedCardsSuperseded，PRD·记忆质量升级 F1）
-  ok(Object.keys(item.handoff).length === 13, "handoff 恰好 13 个字段（= ParsedHandoff 含现行卡字段）");
+  // 14 = 旧 10 字段 + 现行卡模式 3 字段 + 条目模式 1 字段（proposedEntries，07-11 写入口条目原生化）
+  ok(Object.keys(item.handoff).length === 14, "handoff 恰好 14 个字段（= ParsedHandoff 含现行卡+条目字段）");
   eq(item.handoff.aiSuggestions, "", "未传 aiSuggestions 补空串");
   eq(item.handoff.proposedCards, saveInput.proposedCards, "proposedCards 对齐入参（契约强制后必有）");
   ok(Array.isArray(item.handoff.proposedCardsSuperseded) && item.handoff.proposedCardsSuperseded.length === 0, "未传 proposedCardsSuperseded 补空数组");
@@ -354,6 +370,31 @@ async function run() {
     1,
     "未匹配不写盘（inbox 仍只有 1 条）"
   );
+
+  // ── 条目模式契约（07-11 写入口条目原生化）：开了条目注入的项目按开关切换 ──
+  console.log("\n[E2] save_session_handoff 条目模式：开关切契约");
+  const entrySaveNoEntries = { ...saveInputNoCards, project: "条目项目", proposedCards: SELFTEST_CARDS };
+  const entryBounce = await client2.callTool({ name: "save_session_handoff", arguments: entrySaveNoEntries });
+  ok((entryBounce as any).isError === true, "条目模式缺 proposedEntries → 退回（传了卡片也不行）");
+  ok(String((entryBounce as any).content[0].text).includes("proposedEntries"), "退回文案教条目行格式");
+  const entrySave = await client2.callTool({
+    name: "save_session_handoff",
+    arguments: {
+      ...saveInputNoCards,
+      project: "条目项目",
+      proposedEntries: "- 本轮确认了新节奏 #决策 @用户\n- [m-0001] 条目项目的现有记忆 !归档",
+    },
+  });
+  ok((entrySave as any).structuredContent?.staged === true, "条目模式带 proposedEntries → staged=true");
+  const entryItems = fs.readdirSync(inboxDir).filter((n) => n.endsWith(".json") && !n.startsWith("."));
+  eq(entryItems.length, 2, "条目模式 item 落盘");
+  const entryItem = entryItems
+    .map((n) => JSON.parse(fs.readFileSync(path.join(inboxDir, n), "utf8")) as InboxItem)
+    .find((x) => x.slug === "entry-proj")!;
+  ok(!!entryItem, "条目模式 item 归到 entry-proj");
+  ok((entryItem.handoff.proposedEntries ?? "").includes("#决策 @用户"), "proposedEntries 原样入 inbox");
+  ok((entryItem.handoff.proposedEntries ?? "").includes("!归档"), "调整标记原样入 inbox");
+  ok(inboxHandoffToMarkdown(entryItem.handoff).includes("## 5. Proposed Memory Entries"), "条目模式 item 渲染出条目提案段");
 
   console.log("\n[F] 路径 containment：拒 workspace 外 / symlink 逃逸");
   const wsReal = fs.realpathSync(ws);

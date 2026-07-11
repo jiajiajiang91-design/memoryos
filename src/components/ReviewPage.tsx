@@ -106,7 +106,8 @@ export default function ReviewPage({ projectName, raw, parsed, currentContext, c
     name === "about_me.md" ? t("sidebar.aboutMe") :
     name === "00_context.md" ? t("sidebar.context") :
     name === "decisions.md" ? t("sidebar.decisions") :
-    name === "cards.md" ? t("sidebar.cards") : name;
+    name === "cards.md" ? t("sidebar.cards") :
+    name === "entries" ? t("review.entriesTarget") : name;
 
   const RISK_LABEL: Record<UpdateSuggestion["riskLevel"], string> = {
     low: t("review.riskLow"),
@@ -234,6 +235,41 @@ function buildSuggestions(
 ): UpdateSuggestion[] {
   const out: UpdateSuggestion[] = [];
   out.push({ id: "save-session", targetFile: "session", riskLevel: "low", content: "", selected: true });
+
+  // ── 条目模式（07-11 写入口条目原生化）：新记忆条目行直接入条目库，
+  //    !归档 !并入 标记入库后变提案二次确认；AI 建议行照旧逐条待确认 ──
+  const proposedEntries = (p.proposedEntries ?? "").trim();
+  if (proposedEntries && !/^(none|无|没有)\.?$/i.test(proposedEntries)) {
+    out.push({
+      id: "entries", targetFile: "entries", riskLevel: "medium",
+      content: proposedEntries, selected: true, mode: "append",
+    });
+    const entrySugLines = (p.aiSuggestions ?? "")
+      .split("\n")
+      .map((l) => l.replace(/^[-*]\s*/, "").trim())
+      .filter((l) => l && !/^(none|无|没有|n\/a)\.?$/i.test(l));
+    entrySugLines.forEach((line, i) =>
+      out.push({
+        id: `ai-sug-${i}`, targetFile: "ai-suggestion", riskLevel: "high",
+        content: line, selected: false,
+      })
+    );
+    if (p.suggestedAboutMeUpdate && !/no update/i.test(p.suggestedAboutMeUpdate)) {
+      const superseded = extractSuperseded(p.suggestedAboutMeUpdate);
+      const cleanedOld = superseded.length ? stripSuperseded(currentAboutMe, superseded) : currentAboutMe;
+      const cleanedNew = stripSupersededLines(p.suggestedAboutMeUpdate);
+      const stamp = "\n\n---\n_Updated " + new Date().toISOString().slice(0, 10) + "_\n\n";
+      const merged = cleanedOld.trim() ? cleanedOld.trimEnd() + stamp + cleanedNew + "\n" : cleanedNew;
+      out.push({
+        id: "aboutme", targetFile: "about_me.md", riskLevel: "high",
+        content: merged, selected: false, mode: "replace",
+        originalContent: currentAboutMe, newAddition: cleanedNew,
+        superseded,
+        warning: "__aboutMeWarning__",
+      });
+    }
+    return out;
+  }
 
   // ── 记忆卡片模式（PRD·记忆质量升级 F2）：卡片更新提案 + AI 建议·待确认 ──
   const proposed = (p.proposedCards ?? "").trim();

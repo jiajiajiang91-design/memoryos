@@ -26,6 +26,8 @@ export type SaveHandoffInput = {
   aiSuggestions?: string;
   proposedCards?: string;
   proposedCardsSuperseded?: string[];
+  // 条目模式（07-11 写入口条目原生化）：新记忆条目行 + !归档 !并入 调整标记
+  proposedEntries?: string;
 };
 
 /** 校验 targetReal 真实路径仍在 wsReal（workspace 真实路径）内，拒 `..`/symlink 逃逸。 */
@@ -64,6 +66,7 @@ export function buildInboxItem(
     aiSuggestions: input.aiSuggestions ?? "",
     proposedCards: input.proposedCards ?? "",
     proposedCardsSuperseded: input.proposedCardsSuperseded ?? [],
+    proposedEntries: input.proposedEntries ?? "",
   };
   return {
     id: randomUUID(),
