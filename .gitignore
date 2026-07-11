@@ -7,11 +7,8 @@ src-tauri/target
 .clauderules.local
 .claude/
 
-# 本地 dogfooding 产物(slides 等),不进仓库
-# 例外: docs/screenshots/ 给 README 用,需要进仓库(含 zh/ 和 en/ 子目录)
+# 本地产品文档和个人截图，不进仓库
 docs/*
-!docs/screenshots/
-!docs/screenshots/**
 
 # 本地产品思维笔记(docx / 思维导图 / 待办 / 方案文档等), 给我和 Claude 自己看的
 00别忘记产品思维/

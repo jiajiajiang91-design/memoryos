@@ -1,167 +1,175 @@
 # ◇ MemoryOS
 
-> One memory across all your AIs — switch without losing the thread.
->
-> *Every conversation and every thought becomes an asset that carries forward.*
+> Turn context scattered across AI tools into working memory that carries forward.
 
-[中文](./README.md) · [Download](../../releases) · [Issues](../../issues)
+[中文](./README.md) · [Download v0.4.0](../../releases) · [Report an issue](../../issues)
 
-MemoryOS is a desktop app that consolidates your working memory across ChatGPT, Claude, Gemini, Cursor, and others into **one page of "memory cards" per project**. Hand that page to any AI at the start of a new chat and it picks up your progress within 30 seconds. Everything is plain Markdown on your own computer — no account, nothing uploaded.
+MemoryOS is a desktop app for working memory across AI tools. It turns project goals, decisions, constraints, progress, and reusable methods into structured memory, so ChatGPT, Claude, Gemini, Cursor, Codex, and others can pick up the work faster in a new conversation.
 
-![MemoryOS welcome screen](./docs/screenshots/v0.3.0/01_welcome.png)
+It is not a chat-history warehouse and does not try to preserve everything. MemoryOS focuses on three product questions: **what is worth remembering, what should be read now, and whether an AI-written update can be trusted.**
 
-> Screenshots show the Chinese UI; the app is fully bilingual (中 / EN, one-click switch).
+> **v0.4.0 · Memory-entry libraries**: memory moves from a single card to independent entries with IDs, types, sources, importance, and relationships. It adds ranked opening context, in-session retrieval, archive and restore, while keeping legacy cards as a fallback.
 
 ---
 
-## What it solves
+## Why MemoryOS
 
-When you work across several AIs, every new chat starts from zero: who you are, what the project is, where you left off. ChatGPT's memory only works inside ChatGPT. Claude's projects only work inside Claude. Neither carries over.
+Most AI products keep memory inside their own boundaries. Switch tools or open a new conversation and the user has to explain the project again. As context grows, new problems appear: prompts become too long, obsolete decisions leak into the present, and AI suggestions can be mistaken for user decisions.
 
-MemoryOS doesn't replace any AI tool. It is a shared working-memory layer between them: you maintain one memory, and every AI can read it.
+MemoryOS turns those problems into one controlled product loop:
 
----
-
-## Memory cards: one page per project
-
-Each project's memory is distilled into a single page with five sections: **Project Card** (what this is, who it's for), **Current Status** (progress and blockers), **Constraints & Decisions** (every entry dated and attributed), **Last Session** (where you stopped), and **Archive** (where outdated content goes). A global **About Me** card holds your identity and collaboration preferences.
-
-![Dashboard — memory cards in full view](./docs/screenshots/v0.3.0/02_dashboard_cards.png)
-
-Three rules keep the cards useful:
-
-1. **One page max** — the whole file stays under 1200 characters. Overlong context makes models overlook the middle.
-2. **Sources marked** — your decisions and the AI's suggestions are labeled separately; an AI's idea is never recorded as your call.
-3. **Outdated means archived** — superseded decisions move to the archive. They leave the first page but are never deleted.
-
-What you see on the page is exactly what the AI reads at the start of a session.
+| User problem | MemoryOS response |
+|---|---|
+| Repeating project context in every new chat | One working memory shared across AI workflows |
+| Too much context and no clear priority | Ranked opening memory within a 1,200-character budget |
+| Older details disappear when they do not fit | On-demand retrieval through `search_memory` |
+| Current and superseded decisions get mixed | Stable entry IDs; superseded content is archived, not deleted |
+| AI suggestions look like user decisions | Sources are separated at write time; adjustments require review |
 
 ---
 
-## Two ways to use it
+## The product loop
 
-### Copy and paste (works with any AI)
+### 1. Write: turn a conversation into reusable memory
 
-Four steps per round: paste the start prompt into the AI so it loads your memory cards; work as usual; paste the end prompt so it produces a session summary plus an updated version of the cards; import the result back into MemoryOS and confirm.
+At the end of a session, the AI proposes new or changed memory entries instead of rewriting one long document. Every entry preserves its type and source: user-confirmed content, AI suggestions, AI inferences, and third-party material remain distinct.
 
-![Built-in copy-paste tutorial — four steps](./docs/screenshots/v0.3.0/03_copy_paste_tutorial.png)
+### 2. Read: push at the start, pull when needed
 
-### Direct connection with Claude (no copy-paste)
+At the start of a conversation, MemoryOS ranks entries using type, source certainty, freshness, manual importance, and relationships, then selects the most useful context within a fixed budget.
 
-In Claude Desktop, go to Settings → Extensions, install `memoryos.mcpb`, and point it at your workspace. From then on, "read my project memory" at the start and "save the summary back" at the end complete a full round. A step-by-step guide is built into the app.
+When the conversation needs an older decision, convention, or method that was not included, an MCP-connected AI can call `search_memory`. Retrieval supports keywords, entry IDs, similar wording, linked entries, and archived history.
 
-![Built-in Claude connection tutorial](./docs/screenshots/v0.3.0/06_connect_claude.png)
+### 3. Govern: AI proposes, the user confirms
 
-> Web-based ChatGPT / Gemini can't reach a local program yet (browser restriction); use copy-paste with those — everything lands in the same inbox.
-
----
-
-## The AI proposes, you decide
-
-Updates the AI writes back land in an **inbox** first, and the dashboard shows a pending badge. The review page presents old and new side by side: removed lines struck through, additions highlighted. The AI's own suggestions are listed separately — adopt or dismiss each one, and a dismissed suggestion never comes back.
-
-![Review page — strikethrough diff, AI suggestions listed separately](./docs/screenshots/v0.3.0/04_review.png)
-
-![Pending badge on the dashboard](./docs/screenshots/v0.3.0/05_inbox_pending.png)
-
-Once you trust the loop, you can enable **trust mode** per project: routine updates from the direct connection save automatically, while anything inconsistent (for example, an update based on a stale version of the cards) still stops for your review. AI suggestions always require your explicit adoption, in every mode.
+New entries and AI-proposed relationships, merges, or archive actions go to the inbox first. They change official memory only after confirmation. Rejected suggestions are recorded to prevent repetition. Outdated entries can be archived and later restored instead of being permanently deleted.
 
 ---
 
-## Principles
+## Memory architecture
 
-1. **AI organizes, you confirm** — every write goes through your checkbox; direct write-backs go through the inbox first
-2. **Memory stays current** — one latest version per topic; outdated content is archived, not deleted
-3. **Sources stay traceable** — each decision carries a date and its original wording; suggestions and decisions are separated at the source
-4. **No conversation scraping** — summaries are generated by the AI inside your chat and handed back by you; the app never reads your chat history
-5. **Reversible delete** — projects go to the system recycle bin, with a 5-second in-app undo
+### Three libraries
+
+- **Project library** — goals, decisions, status, and handoffs that belong to one project
+- **Global library** — identity and collaboration preferences that apply across projects; the structured form of About Me
+- **Skill library** — reusable methods, templates, and lessons that can follow you between projects
+
+Entries can move between the three libraries. Project and skill memory participate in opening-context selection, while global preferences provide cross-project background.
+
+### Two views
+
+- **For me** — the complete library for grouped browsing, search, filters, editing, importance changes, archive actions, and a relationship graph
+- **For AI** — the exact compact context used at the start, with a live character count and visibility into entries that did not fit
+
+The importance shown in the interface and the order used for AI reading share the same scoring model, keeping the human and AI views aligned.
 
 ---
 
-## Features
+## Ways to use it
 
-- **Memory cards** — one page per project, five sections; what you see is what the AI gets
-- **Fully bilingual** — one-click switch; UI and prompt templates follow your language
-- **8 preset AIs + custom** — ChatGPT / Claude / Gemini / Grok / Cursor / Codex / DeepSeek / Kimi
-- **Direct Claude connection** — install one extension; reading memory and saving summaries need no copy-paste
-- **Inbox and review page** — strikethrough diff; adopt or dismiss AI suggestions, dismissed ones never return
-- **Trust mode** — per-project switch; routine updates save automatically, doubtful ones still ask you
-- **One-step upgrade for old projects** — a single prompt lets the AI draft the first memory cards for any pre-existing project
-- **Plain Markdown** — open everything in Obsidian, VS Code, or Notepad; copying the folder is a full backup
-- **In-app editing** — cards and core files can be edited right in the viewer
-- **One-click feedback** — write a note, copy it, and open GitHub Issues in one step
+### Copy and paste: works with any AI
+
+1. Copy the start-session prompt from MemoryOS
+2. Let the AI load the selected memory and pick up the project
+3. Work as usual
+4. At the end, ask for a summary and new memory entries, then import and review them in MemoryOS
+
+### Direct MCP connection: Claude Desktop and compatible clients
+
+After installing `memoryos.mcpb` and selecting a workspace, the AI can:
+
+- list projects
+- read opening memory
+- retrieve historical memory during a conversation
+- write the session summary and update proposals to the review inbox
+
+For browser-based AIs that cannot access local files directly, use copy and paste. Both paths feed the same memory system.
+
+---
+
+## Core capabilities
+
+- Memory entries with stable IDs, types, sources, importance, and relationships
+- Project / global / skill libraries
+- Human and AI views of the same memory
+- Ranking based on type, source, freshness, manual priority, and relationships
+- Keyword, ID, filter, similar-wording, and linked retrieval
+- Draggable, zoomable relationship graph
+- Archive, restore, duplicate merge, and supersession
+- Review inbox, rejection, and repeat-suggestion prevention
+- Per-project migration to entry-based reading with a legacy-card fallback
+- Full Chinese and English interface
 
 ---
 
 ## Install
 
-### Use the installer (Windows, recommended)
+### Windows installer
 
-Download the latest `.exe` (one-click) or `.msi` (managed install) from [Releases](../../releases).
+Download the v0.4.0 `.exe` or `.msi` from [Releases](../../releases).
 
-Windows shows an "unknown publisher" warning (no code-signing yet); click "More info → Run anyway." The app stays offline and never touches files outside the folder you choose.
+Windows may show an “unknown publisher” warning because the project does not yet have a code-signing certificate. Select “More info → Run anyway.”
 
-### Build from source
+### Run from source
 
-Requires Node 18+, Rust 1.70+, and on Windows: VS Build Tools (Desktop C++).
+Requires Node.js 18+, Rust 1.70+, and on Windows, Visual Studio Build Tools with Desktop development with C++.
 
 ```bash
 git clone https://github.com/jiajiajiang91-design/memoryos.git
 cd memoryos
 npm install
-npm run tauri dev      # development
-npm run tauri build    # production installer
+npm run tauri dev
+```
+
+Production build:
+
+```bash
+npm run tauri build
 ```
 
 ---
 
-## Where your data lives
+## Data and privacy
 
-Default `~/Documents/MemoryOS/`:
+MemoryOS stores data in `~/Documents/MemoryOS/` by default:
 
-```
+```text
 MemoryOS/
-├── about_me.md                          ← About Me (global)
+├── about_me.md
+├── entries/
+│   ├── global.jsonl
+│   └── skill.jsonl
 └── projects/
     └── <project-name>/
-        ├── project.json                  ← metadata
-        ├── cards.md                      ← memory cards (what the AI reads first)
-        ├── decisions.md                  ← decision archive (where outdated entries go)
-        ├── 00_context.md                 ← legacy project context (frozen as archive after upgrade)
-        └── sessions/                     ← session summaries
-            └── session_2026-06-10_2130.md
+        ├── project.json
+        ├── entries.jsonl
+        ├── cards.md
+        ├── decisions.md
+        └── sessions/
 ```
 
-Any editor opens these. Copying the folder is a complete backup.
+- No account required
+- No automatic chat-history scraping
+- No memory uploaded to a MemoryOS server
+- Deleted projects go to the system recycle bin and can be undone
+- Libraries can be exported and re-imported as Markdown; copying the workspace is a complete backup
 
 ---
 
 ## Stack
 
-- **Tauri 1.5** — Rust-core desktop framework; the Windows installer is about 1.8 MB
-- **React 18 + TypeScript** — frontend
-- **Tailwind CSS** — styling, with International Klein Blue #002FA7 as the accent
-- **`trash` crate** — recycle-bin delete and restore via Rust
-- **Vite** — build
+Tauri 1.5 · React 18 · TypeScript · Tailwind CSS · Vite · MCP
 
 ---
 
 ## Versions
 
-- [x] v0.1 — core loop, project management, Windows installer, bilingual UI
-- [x] v0.2 — AI connection (MCP), memory inbox, Claude Desktop extension
-- [x] **v0.3 — memory cards, trust mode, new UI** (current)
-- [ ] Possible next steps (no fixed order): more AI-client connections, Mac / Linux builds, code-signing
+- [x] v0.1 — core workflow, project management, Windows installer, bilingual UI
+- [x] v0.2 — MCP connection, memory inbox, Claude Desktop extension
+- [x] v0.3 — memory cards, trust mode, new interface
+- [x] **v0.4 — memory-entry libraries, three-library/two-view model, ranked reading, retrieval and relationships, entry-native write-back**
 
----
-
-## Feedback
-
-[Issues](../../issues) welcome. The most useful kinds:
-
-- Where you got stuck during onboarding
-- Features you expected but couldn't find
-- Features you will never use (this one matters more)
+Possible next directions, not yet prioritized: more AI clients, macOS / Linux, code signing, true semantic retrieval, and read-access controls.
 
 ---
 
