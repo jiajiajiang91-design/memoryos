@@ -171,6 +171,10 @@ export type ParsedLine = {
   source: SourceKind | null;
   /** 行内 ->编号 解析出的关联目标。 */
   relTargets: string[];
+  /** 行尾 !归档：AI 建议归档这条（导回时变提案，不直接生效）。 */
+  archiveSuggested: boolean;
+  /** 行尾 !并入编号：AI 建议把该编号的条目并进这条（同上走提案）。 */
+  mergeTargets: string[];
 };
 
 const LINE_RE = /^\s*-\s+(?:\[(m-\d+)\]\s*)?(.*)$/;
@@ -194,9 +198,20 @@ export function parseMarkdown(md: string): ParsedLine[] {
     for (const rm of rest.matchAll(/->(m-\d+)/g)) {
       if (!relTargets.includes(rm[1])) relTargets.push(rm[1]);
     }
-    const text = rest.replace(/->m-\d+/g, "").replace(/[#@]\S+/g, "").trim();
+    // AI 调整标记（告诉 AI 改的通道）：只解析出来，生效走提案确认
+    const archiveSuggested = /!归档/.test(rest);
+    const mergeTargets: string[] = [];
+    for (const mm of rest.matchAll(/!并入(m-\d+)/g)) {
+      if (!mergeTargets.includes(mm[1])) mergeTargets.push(mm[1]);
+    }
+    const text = rest
+      .replace(/->m-\d+/g, "")
+      .replace(/!并入m-\d+/g, "")
+      .replace(/!归档/g, "")
+      .replace(/[#@]\S+/g, "")
+      .trim();
     if (!text) continue; // 纯标签无正文的行不算
-    out.push({ id, text, kinds, source, relTargets });
+    out.push({ id, text, kinds, source, relTargets, archiveSuggested, mergeTargets });
   }
   return out;
 }
@@ -593,6 +608,9 @@ export type EntrySuggestions = {
   rejectedRelations: string[];
   pendingMerges: MergeProposal[];
   rejectedMerges: string[];
+  /** AI 建议归档的条目编号（告诉 AI 改通道），确认才归档。 */
+  pendingArchives: string[];
+  rejectedArchives: string[];
 };
 
 export const EMPTY_SUGGESTIONS: EntrySuggestions = {
@@ -600,7 +618,35 @@ export const EMPTY_SUGGESTIONS: EntrySuggestions = {
   rejectedRelations: [],
   pendingMerges: [],
   rejectedMerges: [],
+  pendingArchives: [],
+  rejectedArchives: [],
 };
+
+/**
+ * 从导回的 md 里提取 AI 调整建议（!归档 / !并入），校验后变提案：
+ * 编号得存在、没归档；并入目标得存在且不是自己。生效由用户逐条确认。
+ */
+export function extractAdjustProposals(
+  parsed: ParsedLine[],
+  current: MemoryEntry[]
+): { archives: string[]; merges: MergeProposal[] } {
+  const byId = new Map(current.map((e) => [e.id, e]));
+  const archives: string[] = [];
+  const merges: MergeProposal[] = [];
+  for (const p of parsed) {
+    if (!p.id || !byId.has(p.id)) continue;
+    const cur = byId.get(p.id)!;
+    if (p.archiveSuggested && !cur.archived && !cur.pinned && !archives.includes(p.id)) {
+      archives.push(p.id);
+    }
+    for (const drop of p.mergeTargets) {
+      const target = byId.get(drop);
+      if (!target || drop === p.id || target.archived) continue;
+      merges.push({ keep: p.id, drop });
+    }
+  }
+  return { archives, merges };
+}
 
 /** 新合并提案并进已有队列，按防复提键去重。 */
 export function mergeMergeProposals(
@@ -744,7 +790,8 @@ export function buildRefinePrompt(exportedMd: string): string {
 你要做的：
 1. 检查每条的 #类型 标签是否贴切，不贴切就改。八类可选：#决策 #约束 #状态 #交接 #事实 #偏好 #技能 #零散。一条可以有多个类型标签。
 2. 找出内容上相关的条目，在行尾加 ->编号 指向对方，一行可以有多个箭头。已有的箭头如果不合理可以删。
-3. 只动 #标签 和 ->箭头。不许改正文、不许改 [编号]、不许改 @来源、不许增删行。
+3. 你觉得某条已经过时该收进档案，在它行尾加 !归档。两条基本重复，在该保留的那条行尾加 !并入 加另一条的编号（如 !并入m-0002）。这些是建议，我会逐条确认后才生效。
+4. 只动 #标签、->箭头 和 !标记。不许改正文、不许改 [编号]、不许改 @来源、不许增删行。
 
 输出完整清单，格式和输入完全一样，不要解释。
 

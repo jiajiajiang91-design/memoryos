@@ -56,6 +56,7 @@ import {
   applyMerge,
   mergeMergeProposals,
   mergePairKey,
+  extractAdjustProposals,
   EMPTY_SUGGESTIONS,
   skillCandidates,
   mergeLibsForInjection,
@@ -680,10 +681,24 @@ export default function App() {
   // 导回 md：按编号对账。删除和两边都改过的都先问，取消则保留。
   const onImportEntriesMd = async (md: string) => {
     if (!workspace || !entryLib || entryLib.lib.kind === "all") return;
-    const plan = reconcileImport(entryLib.entries, parseMarkdown(md), {
+    const parsed = parseMarkdown(md);
+    const plan = reconcileImport(entryLib.entries, parsed, {
       exportedAt: entriesExportedAt ?? undefined,
     });
-    if (!plan.updates.length && !plan.adds.length && !plan.deletes.length) {
+    // AI 调整标记（!归档 / !并入）变提案：过掉已在队列和已驳回的
+    const adj = extractAdjustProposals(parsed, entryLib.entries);
+    const newArchives = adj.archives.filter(
+      (id) =>
+        !entryLib.suggestions.pendingArchives.includes(id) &&
+        !entryLib.suggestions.rejectedArchives.includes(id)
+    );
+    const mergedPendingMerges = mergeMergeProposals(
+      entryLib.suggestions.pendingMerges,
+      adj.merges.filter((p) => !entryLib.suggestions.rejectedMerges.includes(mergePairKey(p)))
+    );
+    const newMergeCount = mergedPendingMerges.length - entryLib.suggestions.pendingMerges.length;
+    const proposalCount = newArchives.length + newMergeCount;
+    if (!plan.updates.length && !plan.adds.length && !plan.deletes.length && !proposalCount) {
       showToast(t("entryLib.importNothing"));
       return;
     }
@@ -726,10 +741,47 @@ export default function App() {
       });
     }
     await writeEntriesLib(workspace, entryLib.lib, next);
-    setEntryLib({ ...entryLib, entries: next, badLineCount: 0 });
+    const suggestions: EntrySuggestions = {
+      ...entryLib.suggestions,
+      pendingMerges: mergedPendingMerges,
+      pendingArchives: [...entryLib.suggestions.pendingArchives, ...newArchives],
+    };
+    if (proposalCount) await writeEntrySuggestions(workspace, entryLib.lib, suggestions);
+    setEntryLib({ ...entryLib, entries: next, badLineCount: 0, suggestions });
     showToast(t("entryLib.importDone", {
       u: updateById.size, a: plan.adds.length, d: confirmedDeletes.length,
     }));
+    if (proposalCount) showToast(t("entryLib.importProposals", { n: proposalCount }));
+  };
+
+  // AI 建议归档：确认收档案（原因记手动，是用户确认的），不要则防复提。
+  const onAcceptArchiveProposal = async (id: string) => {
+    if (!workspace || !entryLib || entryLib.lib.kind === "all") return;
+    const today = new Date().toISOString();
+    const entries = entryLib.entries.map((e) =>
+      e.id === id
+        ? { ...e, archived: { reason: "manual" as const, at: today.slice(0, 10) }, updatedAt: today }
+        : e
+    );
+    const suggestions = {
+      ...entryLib.suggestions,
+      pendingArchives: entryLib.suggestions.pendingArchives.filter((x) => x !== id),
+    };
+    await writeEntriesLib(workspace, entryLib.lib, entries);
+    await writeEntrySuggestions(workspace, entryLib.lib, suggestions);
+    setEntryLib({ ...entryLib, entries, suggestions });
+  };
+  const onRejectArchiveProposal = async (id: string) => {
+    if (!workspace || !entryLib || entryLib.lib.kind === "all") return;
+    const suggestions: EntrySuggestions = {
+      ...entryLib.suggestions,
+      pendingArchives: entryLib.suggestions.pendingArchives.filter((x) => x !== id),
+      rejectedArchives: entryLib.suggestions.rejectedArchives.includes(id)
+        ? entryLib.suggestions.rejectedArchives
+        : [...entryLib.suggestions.rejectedArchives, id],
+    };
+    await writeEntrySuggestions(workspace, entryLib.lib, suggestions);
+    setEntryLib({ ...entryLib, suggestions });
   };
 
   // 单条更新（调档、钉住等）：改一条写回当前库，同一编号处处生效。
@@ -1099,6 +1151,9 @@ export default function App() {
           onFindDuplicates={onFindDuplicates}
           onAcceptMerge={onAcceptMerge}
           onRejectMerge={onRejectMerge}
+          pendingArchives={entryLib.suggestions.pendingArchives}
+          onAcceptArchiveProposal={onAcceptArchiveProposal}
+          onRejectArchiveProposal={onRejectArchiveProposal}
           entryInjectionOn={project.entryInjection ?? false}
           onToggleInjection={toggleEntryInjection}
         />

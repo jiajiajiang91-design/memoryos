@@ -59,6 +59,10 @@ type Props = {
   onFindDuplicates: () => void;
   onAcceptMerge: (p: MergeProposal) => void;
   onRejectMerge: (p: MergeProposal) => void;
+  /** AI 建议归档的条目（告诉 AI 改通道），确认才归档。 */
+  pendingArchives: string[];
+  onAcceptArchiveProposal: (id: string) => void;
+  onRejectArchiveProposal: (id: string) => void;
   /** 开场注入来源开关：开了用条目库，关了用记忆卡片（07-04 确认）。 */
   entryInjectionOn: boolean;
   onToggleInjection: () => void;
@@ -475,6 +479,40 @@ export default function EntryLibraryPage(props: Props) {
                 </div>
               </div>
             )}
+            {!readOnly && props.pendingArchives.length > 0 && (
+              <div className="rounded-xl border border-[#EAD9A8] bg-[#FFFBEF]">
+                <div className="px-4 py-2.5 flex items-center gap-3 border-b border-[#EAD9A8]/60">
+                  <span className="text-[13px] font-medium text-[#A37A1C]">
+                    {t("entryLib.archPending", { n: props.pendingArchives.length })}
+                  </span>
+                  <span className="text-[12px] text-ink-faint flex-1">{t("entryLib.archPendingHint")}</span>
+                </div>
+                <div className="px-4 py-2 max-h-40 overflow-y-auto divide-y divide-[#EAD9A8]/40">
+                  {props.pendingArchives.map((id) => {
+                    const e = props.entries.find((x) => x.id === id);
+                    if (!e || e.archived) return null;
+                    return (
+                      <div key={`arch-p-${id}`} className="py-2 flex items-center gap-3 text-[13px]">
+                        <span className="text-[11px] text-ink-faint font-display shrink-0">{id}</span>
+                        <p className="text-ink flex-1 min-w-0 truncate" title={e.text}>{e.text}</p>
+                        <button
+                          onClick={() => props.onAcceptArchiveProposal(id)}
+                          className="h-7 px-2.5 rounded-lg border border-hairline text-[12px] text-[#1E7A46] hover:border-[#1E7A46]/50 transition-colors shrink-0"
+                        >
+                          {t("entryLib.archive")}
+                        </button>
+                        <button
+                          onClick={() => props.onRejectArchiveProposal(id)}
+                          className="h-7 px-2.5 rounded-lg border border-hairline text-[12px] text-ink-faint hover:text-ink transition-colors shrink-0"
+                        >
+                          {t("entryLib.relReject")}
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
             {ALL_KINDS.map((k) =>
               grouped[k].length === 0 ? null : (
                 <section key={k}>
@@ -482,6 +520,17 @@ export default function EntryLibraryPage(props: Props) {
                     {KIND_LABELS[k]}
                     <span className="ml-2 text-ink-faint font-normal">{grouped[k].length}</span>
                   </h2>
+                  {k === "misc" && !readOnly && grouped.misc.length >= 5 && (
+                    <div className="mb-3 px-4 py-2.5 bg-surface-soft border border-hairline rounded-lg flex items-center gap-3">
+                      <p className="text-[13px] text-ink-soft flex-1">{t("entryLib.miscOutletHint", { n: grouped.misc.length })}</p>
+                      <button
+                        onClick={props.onCopyRefinePrompt}
+                        className="h-8 px-3 rounded-lg border border-hairline text-[12px] text-ink-soft inline-flex items-center gap-1.5 hover:text-ink hover:border-slate/40 transition-colors shrink-0"
+                      >
+                        <Sparkles size={12} strokeWidth={1.5} /> {t("entryLib.refinePrompt")}
+                      </button>
+                    </div>
+                  )}
                   <div className="space-y-2">
                     {grouped[k].map((e) => (
                       <div key={`${k}-${e.scopes[0] ?? ""}-${e.id}`} className="rounded-xl border border-hairline bg-surface-soft">

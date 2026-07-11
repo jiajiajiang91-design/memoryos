@@ -21,6 +21,8 @@ import {
   proposeMerges,
   applyMerge,
   mergePairKey,
+  extractAdjustProposals,
+  buildRefinePrompt,
   skillCandidates,
   mergeLibsForInjection,
   similarityScore,
@@ -472,6 +474,46 @@ console.log("\n[V] 去重合并提案");
   const rel1 = mk({ id: "m-1105", text: "升权捞回是本轮重点工作" });
   const rel2 = mk({ id: "m-1106", text: "本轮重点是修复星图布局问题" });
   eq(proposeMerges([rel1, rel2]), [], "只是相关不算重复");
+}
+
+console.log("\n[W] 告诉 AI 改：!归档 !并入 标记变提案");
+{
+  const md = [
+    "- [m-1201] 过时的旧结论 #状态 @用户 !归档",
+    "- [m-1202] 保留这条 #决策 @用户 ->m-1203 !并入m-1203",
+    "- [m-1203] 会被并入的重复条 #决策 @用户",
+    "- [m-1204] 正常条目不带标记 #事实 @用户",
+  ].join("\n");
+  const pl = parseMarkdown(md);
+  ok(pl[0].archiveSuggested && !pl[3].archiveSuggested, "!归档 标记解析出来");
+  eq(pl[1].mergeTargets, ["m-1203"], "!并入 解析出目标编号");
+  eq(pl[0].text, "过时的旧结论", "标记不混进正文");
+  eq(pl[1].text, "保留这条", "并入标记和箭头都不混进正文");
+  eq(pl[1].relTargets, ["m-1203"], "箭头照常解析");
+  const cur = [
+    mk({ id: "m-1201", text: "过时的旧结论", kinds: ["state"] }),
+    mk({ id: "m-1202", text: "保留这条", kinds: ["decision"] }),
+    mk({ id: "m-1203", text: "会被并入的重复条", kinds: ["decision"] }),
+    mk({ id: "m-1204", text: "正常条目不带标记", kinds: ["fact"] }),
+  ];
+  const adj = extractAdjustProposals(pl, cur);
+  eq(adj.archives, ["m-1201"], "归档建议只出标了的");
+  eq(adj.merges, [{ keep: "m-1202", drop: "m-1203" }], "并入建议成合并提案");
+  // 校验：钉住的不出归档建议、已归档的不重复、目标不存在的并入丢弃
+  const adj2 = extractAdjustProposals(pl, [
+    { ...cur[0], pinned: true },
+    cur[1],
+    { ...cur[2], archived: { reason: "manual", at: "2026-07-11" } },
+    cur[3],
+  ]);
+  eq(adj2.archives, [], "钉住的不出归档建议");
+  eq(adj2.merges, [], "目标已归档的并入建议丢弃");
+  // 提示词包含新规则
+  ok(buildRefinePrompt("x").includes("!归档") && buildRefinePrompt("x").includes("!并入"), "整理提示词教了新标记");
+  // 干净往返：导出从不产生标记，原样导回仍无更新
+  const clean = exportToMarkdown(cur);
+  ok(!clean.includes("!"), "导出不含调整标记");
+  eq(reconcileImport(cur, parseMarkdown(clean)).updates.length, 0, "带新字段的解析往返不误报更新");
 }
 
 console.log(`\n结果：${pass} passed, ${fail} failed\n`);
