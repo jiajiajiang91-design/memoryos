@@ -126,6 +126,11 @@ fs.writeFileSync(
   }, null, 2)
 );
 fs.writeFileSync(path.join(entryProjDir, "entries.jsonl"), entry("m-0001", "条目项目的现有记忆", ["fact"]).replace('"demo-proj"', '"entry-proj"') + "\n");
+// 全局库 fixture：开了条目读取的项目，关于我改读全局库（07-11 确认）
+fs.writeFileSync(
+  path.join(ws, "entries", "global.jsonl"),
+  entry("m-0001", "全局偏好：先给结论再给细节", ["preference"]).replace('"demo-proj"', '"global"') + "\n"
+);
 
 // 埋点写到临时目录，便于断言（覆盖 appData 推断）。telemetry / mcp_state 都不许进 workspace 正式区。
 const telemetryDir = fs.mkdtempSync(path.join(os.tmpdir(), "memoryos-telemetry-"));
@@ -183,6 +188,14 @@ async function run() {
   ok(matchProject(projects, "demo")?.slug === "demo-proj", "包含匹配命中");
   ok(matchProject(projects, "不存在的项目xyz") === null, "匹配不到返回 null");
   ok((await getProjectMemory(ws, "nope")) === null, "get_project_memory 匹配不到返回 null");
+
+  console.log("\n[B1] 全局库替换关于我（07-11 确认：关于我即全局库的 md 版）");
+  const entryMem = await getProjectMemory(ws, "条目项目");
+  ok(entryMem !== null, "条目项目命中");
+  ok(entryMem!.aboutMe.includes("全局偏好：先给结论再给细节"), "开了条目读取且全局库非空 → 关于我读全局库");
+  ok(!entryMem!.aboutMe.includes("我是 Jiajia"), "全局库非空时不再带 about_me.md 原文");
+  ok(entryMem!.cards.includes("条目项目的现有记忆"), "项目条目照常进读取");
+  eq(mem!.aboutMe, ABOUT_ME, "未开开关的项目关于我仍是 about_me.md 原文");
 
   console.log("\n[B2] search_memory 纯函数：拉取通道（推之外的拉）");
   const sm = await searchMemory(ws, "克莱因蓝", "demo");

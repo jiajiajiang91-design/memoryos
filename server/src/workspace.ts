@@ -128,7 +128,7 @@ export async function getProjectMemory(
   if (!match) return null;
 
   const dir = path.join(workspace, "projects", match.slug);
-  const aboutMe = await readTextSafe(path.join(workspace, "about_me.md"));
+  let aboutMe = await readTextSafe(path.join(workspace, "about_me.md"));
   const context = await readTextSafe(path.join(dir, "00_context.md"));
   const decisions = await readTextSafe(path.join(dir, "decisions.md"));
   let cards = await readTextSafe(path.join(dir, "cards.md"));
@@ -148,7 +148,7 @@ export async function getProjectMemory(
         const skillLib = fromJsonl(
           await readTextSafe(path.join(workspace, "entries", "skill.jsonl"))
         );
-        // 挑选尺子 = app 界面档位同款合成分，两条注入路径同一把尺
+        // 挑选尺子 = app 界面重要度同款合成分，两条读取路径一致
         const now = Date.now();
         const inj = buildInjectionFromEntries(
           mergeLibsForInjection(active, skillLib.entries),
@@ -156,6 +156,15 @@ export async function getProjectMemory(
           (e) => scoreEntryAt(e, now)
         );
         cards = `# 记忆条目 · ${match.name}\n\n${inj.text}`;
+        // 关于我即全局库的 md 版（07-11 确认）：全局库有内容就读它，空则回落 about_me.md
+        const globalLib = fromJsonl(
+          await readTextSafe(path.join(workspace, "entries", "global.jsonl"))
+        );
+        const gActive = globalLib.entries.filter((e) => !e.archived);
+        if (gActive.length) {
+          const gInj = buildInjectionFromEntries(gActive, undefined, (e) => scoreEntryAt(e, now));
+          aboutMe = `# 关于我（记忆条目）\n\n${gInj.text}`;
+        }
       }
     }
   } catch {

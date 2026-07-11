@@ -1196,16 +1196,17 @@ export default function App() {
           onCopyStartPrompt={async () => {
             if (!workspace || !project) return;
             const ctx = await readContextForStartPrompt(workspace, project.slug);
-            // 开关开且条目库有现行条目 → 注入用条目按权重拼的文本；否则仍用记忆卡片
+            // 开关开且记忆库有现行条目 → AI 开场读条目按分挑的文本；否则仍用记忆卡片
             let cards = ctx.cards;
+            let aboutMe = ctx.aboutMe;
             let archiveHint = true;
             if (project.entryInjection) {
               const lib = await readEntriesLib(workspace, { kind: "project", slug: project.slug });
               const activeEntries = lib.entries.filter((e) => !e.archived);
-              // 回落规则以项目库为准；有条目时再拼上技能库，合并按权重挑（07-10 确认）
+              // 回落规则以项目库为准；有条目时再拼上技能库，合并按分挑（07-10 确认）
               if (activeEntries.length) {
                 const skillLib = await readEntriesLib(workspace, { kind: "skill" });
-                // 挑选尺子 = 界面档位同款合成分（所见档位 = 注入排序）
+                // 挑选尺子 = 界面重要度同款合成分（所见即所读）
                 const now = Date.now();
                 const inj = buildInjectionFromEntries(
                   mergeLibsForInjection(activeEntries, skillLib.entries),
@@ -1214,11 +1215,20 @@ export default function App() {
                 );
                 cards = `# 记忆条目 · ${project.name}\n\n${inj.text}`;
                 archiveHint = false;
+                // 关于我即全局库的 md 版（07-11 确认）：全局库有内容就读它，
+                // 空则回落 about_me.md，与卡片切条目同一套规则
+                const globalLib = await readEntriesLib(workspace, { kind: "global" });
+                const gActive = globalLib.entries.filter((e) => !e.archived);
+                if (gActive.length) {
+                  const gInj = buildInjectionFromEntries(gActive, undefined, (e) => scoreEntryAt(e, now));
+                  aboutMe = `# 关于我（记忆条目）\n\n${gInj.text}`;
+                }
               }
             }
             const prompt = buildStartSessionPrompt({
               projectName: project.name,
               ...ctx,
+              aboutMe,
               cards,
               archiveHint,
               lang,
