@@ -925,6 +925,7 @@ function GraphView(props: {
     });
     const idx = new Map(xs.map((v, i) => [v.id, i]));
     const springs = edges.map((ed) => [idx.get(ed.from)!, idx.get(ed.to)!] as const);
+    // 斥力大、弹簧长、向心力小：点撑满画布散开，不挤成一团
     for (let it = 0; it < 220; it++) {
       const cool = 1 - it / 220;
       const fx = new Array(n).fill(0);
@@ -934,7 +935,7 @@ function GraphView(props: {
           const dx = xs[i].x - xs[j].x;
           const dy = xs[i].y - xs[j].y;
           const d2 = Math.max(dx * dx + dy * dy, 64);
-          const f = 2600 / d2;
+          const f = 9000 / d2;
           const d = Math.sqrt(d2);
           fx[i] += (dx / d) * f; fy[i] += (dy / d) * f;
           fx[j] -= (dx / d) * f; fy[j] -= (dy / d) * f;
@@ -944,15 +945,15 @@ function GraphView(props: {
         const dx = xs[b].x - xs[a].x;
         const dy = xs[b].y - xs[a].y;
         const d = Math.max(Math.sqrt(dx * dx + dy * dy), 1);
-        const f = (d - 95) * 0.03;
+        const f = (d - 150) * 0.025;
         fx[a] += (dx / d) * f; fy[a] += (dy / d) * f;
         fx[b] -= (dx / d) * f; fy[b] -= (dy / d) * f;
       }
       for (let i = 0; i < n; i++) {
-        fx[i] += (W / 2 - xs[i].x) * 0.012;
-        fy[i] += (H / 2 - xs[i].y) * 0.012;
-        xs[i].x = Math.min(W - 40, Math.max(40, xs[i].x + fx[i] * cool));
-        xs[i].y = Math.min(H - 40, Math.max(40, xs[i].y + fy[i] * cool));
+        fx[i] += (W / 2 - xs[i].x) * 0.005;
+        fy[i] += (H / 2 - xs[i].y) * 0.005;
+        xs[i].x = Math.min(W - 30, Math.max(30, xs[i].x + fx[i] * cool));
+        xs[i].y = Math.min(H - 30, Math.max(30, xs[i].y + fy[i] * cool));
       }
     }
     for (const v of xs) p.set(v.id, { x: v.x, y: v.y });
@@ -1096,8 +1097,13 @@ function GraphView(props: {
       <svg
         ref={svgRef}
         viewBox={`${view.x} ${view.y} ${view.w} ${view.h}`}
-        className="w-full rounded-xl border border-hairline bg-surface-soft touch-none"
-        style={{ cursor: drag.current?.kind === "pan" ? "grabbing" : "grab" }}
+        className="block mx-auto max-w-full rounded-xl border border-hairline bg-surface-soft touch-none"
+        style={{
+          // 一页放完不出滚动条：高度按视口算，宽度随比例跟随；有提案面板时再让一截
+          height: `min(560px, calc(100vh - ${props.pendingRelations.length && !props.readOnly ? 560 : 350}px))`,
+          width: "auto",
+          cursor: drag.current?.kind === "pan" ? "grabbing" : "grab",
+        }}
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
         onPointerUp={endDrag}
@@ -1123,7 +1129,7 @@ function GraphView(props: {
           const tier = tierOf(e);
           const fill = tier === "high" ? "#002FA7" : tier === "mid" ? "#8A93A8" : "#C6CBD6";
           const deg = degree.get(e.id) ?? 0;
-          const r = 4 + Math.min(8, deg * 1.6) + (e.pinned ? 1.5 : 0);
+          const r = 3 + Math.min(5, deg * 1.1) + (e.pinned ? 1.5 : 0);
           // 文字淡出阈值：有关联的 zoom=1 时六成透明度、拉近到 1.35 全显，
           // 孤立点阈值更高（拉近才显字，减少外围杂讯）；悬停邻域强制全显
           const zoom = W / view.w;
@@ -1144,10 +1150,10 @@ function GraphView(props: {
               {labelAlpha > 0.02 && (
                 <text
                   x={p.x}
-                  y={p.y + r + 12}
+                  y={p.y + r + 11}
                   textAnchor="middle"
                   className="fill-current text-ink-soft"
-                  fontSize="9.5"
+                  fontSize="9"
                   opacity={labelAlpha}
                 >
                   {graphLabel(e.text)}
